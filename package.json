@@ -1,0 +1,16 @@
+{
+  "name": "lop-hoc-online",
+  "version": "1.0.0",
+  "description": "Lớp học online: bảng trắng realtime cho giáo viên, học sinh xem trực tiếp",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "socket.io": "^4.8.0"
+  }
+}
