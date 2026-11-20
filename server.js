@@ -134,7 +134,7 @@ function sanitizePatch(it, patch) {
 const ROOM = 'LOP';
 const TITLE = (process.env.CLASS_TITLE || '').trim().slice(0, 60);
 if (!rooms[ROOM]) {
-  const first = newPage('Buổi 1', 'grid');
+  const first = newPage('Trang 1', 'grid');
   const now = Date.now();
   rooms[ROOM] = { code: ROOM, title: TITLE || 'Phụ đạo', created: now, updated: now, allowDraw: true, pages: [first], current: first.id };
   save();

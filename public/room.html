@@ -809,7 +809,7 @@ function renderTabs() {
     if (Date.now() - (renderTabs.lastAdd || 0) < 800) return; // tránh bấm đúp ra 2 trang
     renderTabs.lastAdd = Date.now();
     const p = pages.find((x) => x.id === cur);
-    socket.emit('page:add', { name: 'Buổi ' + (pages.length + 1), bg: p ? p.bg : 'grid' });
+    socket.emit('page:add', { name: 'Trang ' + (pages.length + 1), bg: p ? p.bg : 'grid' });
   };
   box.appendChild(add);
 }
