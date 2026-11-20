@@ -79,12 +79,25 @@ input[type=color]{width:34px;height:30px;padding:0;border:1px solid #cbd5e1;bord
 /* điện thoại nằm ngang: thấp, nên thu nhỏ thanh trên và nút */
 @media (orientation:landscape) and (max-height:500px){
   .top{min-height:38px;padding:2px 6px}
+  .top h1{display:none}
   .ib{width:32px;height:32px;font-size:16px}
   .tab{height:28px;padding:3px 9px}
-  .tools{width:42px;gap:1px;padding:2px}
-  .tb{width:36px;height:31px;font-size:16px}
-  .tools hr{margin:1px 0}
+  /* màn hình thấp: xếp công cụ thành 2 cột để không bị che */
+  body[data-role=teacher] .tools,body.can-draw .tools{display:grid}
+  .tools{grid-template-columns:repeat(2,34px);grid-auto-rows:32px;gap:3px;width:auto;padding:4px;align-content:center;justify-content:center}
+  .tb{width:34px;height:32px;font-size:16px}
+  .tools hr{display:none}
 }
+.tools{justify-content:safe center}
+#count{border:0;background:none;border-radius:9px;height:32px;cursor:pointer}
+#count:hover{background:#f1f5f9}
+.ulist{display:flex;flex-direction:column;gap:2px;min-width:160px}
+.ulist div{padding:6px 8px;border-radius:6px;white-space:nowrap}
+.ulist div::before{content:'🟢 '}
+body.top-hidden .top{display:none}
+.mini{position:absolute;top:6px;right:6px;z-index:25;display:none;gap:4px}
+body.top-hidden .mini{display:flex}
+.mini .ib{background:#ffffffe6;box-shadow:0 1px 6px #0003}
 @media (max-width:500px){ .top h1{display:none} }
 
 .area{flex:1;min-width:0;position:relative;background:#e2e8f0;overflow:hidden}
@@ -140,11 +153,12 @@ body.side-open .side{transform:none}
 <div class="top">
   <h1 id="title">Phụ đạo</h1>
   <div class="tabs" id="tabs"></div>
-  <span id="count" title="Số người đang vào">👥 0</span>
+  <button id="count" title="Ai đang trong phòng">👥 0</button>
   <button class="ib" id="listenBtn" hidden title="Nghe mic người kia">🔊</button>
   <button class="ib" id="micBtn" title="Bật/tắt mic">🎤</button>
   <button class="ib" id="sideBtn" title="Chat">💬<i class="dot" id="chatDot" hidden></i></button>
   <button class="ib" id="moreBtn" title="Thêm">⋯</button>
+  <button class="ib" id="hideTop" title="Ẩn thanh trên cho bảng rộng hơn">⛶</button>
 
   <span class="badge gone" id="roleBadge">…</span>
   <label class="chk gone"><input type="checkbox" id="allowChk"> Cho HS viết</label>
@@ -162,6 +176,7 @@ body.side-open .side{transform:none}
   </select>
   <button class="btn full" id="linkBtn">🔗 Copy link</button>
 </div>
+<div class="pop" id="usersPop" hidden><div class="ulist" id="ulist"></div></div>
 <div class="pop" id="shapePop" hidden>
   <button class="tb" data-tool="line" title="Đường thẳng">╱</button>
   <button class="tb" data-tool="arrow" title="Mũi tên">➜</button>
@@ -194,6 +209,10 @@ body.side-open .side{transform:none}
     <input type="file" id="fileIn" accept="image/*" hidden>
   </div>
 
+  <div class="mini" id="mini">
+    <button class="ib" id="miniChat" title="Chat">💬<i class="dot" id="miniDot" hidden></i></button>
+    <button class="ib" id="showTop" title="Hiện thanh trên">☰</button>
+  </div>
   <div class="area" id="area">
     <div id="stage" class="bg-blank">
       <canvas id="cv"></canvas>
@@ -475,9 +494,18 @@ function openPop(pop, btn) {
 $('#shapeBtn').onclick = (e) => { e.stopPropagation(); openPop($('#shapePop'), e.currentTarget); };
 $('#colorBtn').onclick = (e) => { e.stopPropagation(); openPop($('#colorPop'), e.currentTarget); };
 $('#moreBtn').onclick = (e) => { e.stopPropagation(); openPop($('#morePop'), e.currentTarget); };
+$('#count').onclick = (e) => { e.stopPropagation(); openPop($('#usersPop'), e.currentTarget); };
+function setTopHidden(h) {
+  document.body.classList.toggle('top-hidden', h);
+  try { localStorage.setItem('bw_topHidden', h ? '1' : ''); } catch (er) { /* bỏ qua */ }
+  closePops();
+}
+$('#hideTop').onclick = () => setTopHidden(true);
+$('#showTop').onclick = () => setTopHidden(false);
+try { if (localStorage.getItem('bw_topHidden')) document.body.classList.add('top-hidden'); } catch (er) { /* bỏ qua */ }
 $$('.pop').forEach((p) => p.addEventListener('click', (e) => e.stopPropagation()));
 document.addEventListener('click', closePops);
-document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.pop') && !e.target.closest('#shapeBtn,#colorBtn,#moreBtn')) closePops(); });
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.pop') && !e.target.closest('#shapeBtn,#colorBtn,#moreBtn,#count')) closePops(); });
 setColor(color);
 
 const toV = (e) => {
@@ -776,7 +804,7 @@ function renderTabs() {
     box.appendChild(b);
   });
   const add = document.createElement('button');
-  add.className = 'tab'; add.textContent = '＋ Thêm trang';
+  add.className = 'tab'; add.textContent = '＋'; add.title = 'Thêm trang'; add.style.minWidth = '40px';
   add.onclick = () => {
     if (Date.now() - (renderTabs.lastAdd || 0) < 800) return; // tránh bấm đúp ra 2 trang
     renderTabs.lastAdd = Date.now();
@@ -837,7 +865,7 @@ function addChat(m) {
   $('#chatBox').appendChild(d);
   $('#chatBox').scrollTop = 1e9;
   if (!mine && !live0 && !document.body.classList.contains('side-open')) {
-    $('#chatDot').hidden = false;
+    $('#chatDot').hidden = false; $('#miniDot').hidden = false;
     toast('💬 ' + m.name + ': ' + m.text.slice(0, 60));
   }
 }
@@ -857,14 +885,18 @@ $$('.stabs button').forEach((b) => (b.onclick = () => {
 }));
 function setSide(open) {
   document.body.classList.toggle('side-open', open);
-  if (open) { $('#chatDot').hidden = true; setTimeout(() => $('#chatIn').focus(), 200); }
+  if (open) { $('#chatDot').hidden = true; $('#miniDot').hidden = true; setTimeout(() => $('#chatIn').focus(), 200); }
 }
 $('#sideBtn').onclick = () => setSide(!document.body.classList.contains('side-open'));
 $('#sideClose').onclick = () => setSide(false);
+$('#miniChat').onclick = () => setSide(!document.body.classList.contains('side-open'));
 
 function renderUsers() {
   $('#count').textContent = users.length > 1 ? '🟢 ' + users.length : '⚪ 1';
   $('#count').title = users.map((u) => u.name).join(', ');
+  const ul = $('#ulist');
+  ul.textContent = '';
+  users.forEach((u) => { const d = document.createElement('div'); d.textContent = u.name + (u.id === me.id ? ' (bạn)' : ''); ul.appendChild(d); });
   $('#usersTab').textContent = '👥 Lớp (' + users.length + ')';
   const box = $('#userList');
   box.textContent = '';
