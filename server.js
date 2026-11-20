@@ -79,7 +79,7 @@ function sanitizeItem(it, author) {
   switch (it.t) {
     case 'pen':
     case 'eraser': {
-      const pts = Array.isArray(it.pts) ? it.pts.slice(0, 20000).map((n) => num(n, -500, 2500)) : [];
+      const pts = Array.isArray(it.pts) ? it.pts.slice(0, 20000).map((n) => num(n, -1000, 21000)) : [];
       if (pts.length < 2) return null;
       return { ...base, t: it.t, c: col(it.c), w: num(it.w, 1, 120, 4), pts };
     }
@@ -89,13 +89,13 @@ function sanitizeItem(it, author) {
     case 'ellipse':
       return {
         ...base, t: it.t, c: col(it.c), w: num(it.w, 1, 80, 4),
-        x1: num(it.x1, -500, 2500), y1: num(it.y1, -500, 2500),
-        x2: num(it.x2, -500, 2500), y2: num(it.y2, -500, 2500),
+        x1: num(it.x1, -1000, 21000), y1: num(it.y1, -1000, 21000),
+        x2: num(it.x2, -1000, 21000), y2: num(it.y2, -1000, 21000),
       };
     case 'text':
       return {
         ...base, t: 'text', c: col(it.c), size: num(it.size, 12, 200, 40),
-        x: num(it.x, -500, 2500), y: num(it.y, -500, 2500),
+        x: num(it.x, -1000, 21000), y: num(it.y, -1000, 21000),
         content: String(it.content || '').slice(0, 2000),
       };
     case 'img': {
@@ -103,7 +103,7 @@ function sanitizeItem(it, author) {
       if (!/^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src) || src.length > 1.8e6) return null;
       return {
         ...base, t: 'img', src,
-        x: num(it.x, -500, 2500), y: num(it.y, -500, 2500),
+        x: num(it.x, -1000, 21000), y: num(it.y, -1000, 21000),
         w: num(it.w, 10, 3000, 400), h: num(it.h, 10, 3000, 300),
       };
     }
@@ -115,8 +115,8 @@ function sanitizeItem(it, author) {
 function sanitizePatch(it, patch) {
   const P = {};
   if (!patch || typeof patch !== 'object') return P;
-  if ('x' in patch) P.x = num(patch.x, -500, 2500);
-  if ('y' in patch) P.y = num(patch.y, -500, 2500);
+  if ('x' in patch) P.x = num(patch.x, -1000, 21000);
+  if ('y' in patch) P.y = num(patch.y, -1000, 21000);
   if (it.t === 'img') {
     if ('w' in patch) P.w = num(patch.w, 10, 3000, it.w);
     if ('h' in patch) P.h = num(patch.h, 10, 3000, it.h);
@@ -198,7 +198,7 @@ io.on('connection', (sock) => {
     for (let i = pg.items.length - 1; i >= 0; i--) if (pg.items[i].id === d.id) { it = pg.items[i]; break; }
     if (!it || !it.pts) return;
     if (!isT() && it.author !== sock.id) return;
-    const pts = Array.isArray(d.pts) ? d.pts.slice(0, 2000).map((n) => num(n, -500, 2500)) : [];
+    const pts = Array.isArray(d.pts) ? d.pts.slice(0, 2000).map((n) => num(n, -1000, 21000)) : [];
     if (!pts.length || pts.length % 2 || it.pts.length + pts.length > 40000) return;
     it.pts.push(...pts);
     touch();
@@ -229,7 +229,7 @@ io.on('connection', (sock) => {
 
   on('laser', (d) => {
     if (!room || !isT()) return;
-    sock.volatile.to(room.code).emit('laser', { x: num(d.x, -500, 2500), y: num(d.y, -500, 2500), on: !!d.on });
+    sock.volatile.to(room.code).emit('laser', { x: num(d.x, -1000, 21000), y: num(d.y, -1000, 21000), on: !!d.on });
   });
 
   /* --- trang --- */
