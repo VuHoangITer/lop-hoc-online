@@ -94,10 +94,6 @@ input[type=color]{width:34px;height:30px;padding:0;border:1px solid #cbd5e1;bord
 .ulist{display:flex;flex-direction:column;gap:2px;min-width:160px}
 .ulist div{padding:6px 8px;border-radius:6px;white-space:nowrap}
 .ulist div::before{content:'🟢 '}
-body.top-hidden .top{display:none}
-.mini{position:absolute;top:6px;right:6px;z-index:25;display:none;gap:4px}
-body.top-hidden .mini{display:flex}
-.mini .ib{background:#ffffffe6;box-shadow:0 1px 6px #0003}
 @media (max-width:500px){ .top h1{display:none} }
 
 .area{flex:1;min-width:0;position:relative;background:#e2e8f0;overflow:hidden}
@@ -119,8 +115,11 @@ body.top-hidden .mini{display:flex}
 @keyframes zapF{0%,28%,56%{opacity:1}14%,42%,70%{opacity:.15}100%{opacity:0}}
 body.shake{animation:shake .6s}
 @keyframes shake{0%,100%{transform:none}10%{transform:translate(-6px,3px)}20%{transform:translate(5px,-4px)}30%{transform:translate(-4px,-2px)}40%{transform:translate(6px,4px)}50%{transform:translate(-5px,2px)}60%{transform:translate(4px,-3px)}70%{transform:translate(-3px,3px)}80%{transform:translate(2px,-2px)}}
-#zapBtn,#miniZap{font-size:19px}
-.zoomInfo{position:absolute;right:8px;bottom:8px;background:#0f172acc;color:#fff;padding:6px 12px;border-radius:99px;font-size:12px;z-index:15;border:0;cursor:pointer}
+#zapBtn{font-size:19px}
+.rail{position:absolute;top:0;right:0;bottom:0;width:30px;z-index:14;touch-action:none;background:linear-gradient(90deg,transparent,#0f172a0d);cursor:pointer}
+.rail .thumb{position:absolute;right:4px;width:20px;min-height:48px;border-radius:10px;background:#475569b3;box-shadow:0 1px 4px #0003;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;line-height:1}
+.rail.drag .thumb{background:#2563ebd9}
+.zoomInfo{position:absolute;right:36px;bottom:8px;background:#0f172acc;color:#fff;padding:6px 12px;border-radius:99px;font-size:12px;z-index:15;border:0;cursor:pointer}
 .banner{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:6px 14px;border-radius:99px;z-index:20}
 
 /* chat: ngăn kéo trượt ra từ bên phải, không chiếm chỗ của bảng */
@@ -164,7 +163,6 @@ body.side-open .side{transform:none}
   <button class="ib" id="zapBtn" title="Chích điện người kia ⚡">⚡</button>
   <button class="ib" id="sideBtn" title="Chat">💬<i class="dot" id="chatDot" hidden></i></button>
   <button class="ib" id="moreBtn" title="Thêm">⋯</button>
-  <button class="ib" id="hideTop" title="Ẩn thanh trên cho bảng rộng hơn">⛶</button>
 
   <span class="badge gone" id="roleBadge">…</span>
   <label class="chk gone"><input type="checkbox" id="allowChk"> Cho HS viết</label>
@@ -215,17 +213,13 @@ body.side-open .side{transform:none}
     <input type="file" id="fileIn" accept="image/*" hidden>
   </div>
 
-  <div class="mini" id="mini">
-    <button class="ib" id="miniZap" title="Chích điện người kia ⚡">⚡</button>
-    <button class="ib" id="miniChat" title="Chat">💬<i class="dot" id="miniDot" hidden></i></button>
-    <button class="ib" id="showTop" title="Hiện thanh trên">☰</button>
-  </div>
   <div class="area" id="area">
     <div id="stage" class="bg-blank">
       <canvas id="cv"></canvas>
       <div id="dom"></div>
       <div class="laser" id="laser"></div>
     </div>
+    <div class="rail" id="rail" title="Kéo để cuộn bảng lên/xuống"><div class="thumb" id="thumb">⇕</div></div>
     <button class="zoomInfo" id="zoomInfo" hidden title="Bấm để về đầu trang, cỡ vừa màn hình"></button>
     <div class="banner" id="banner" hidden>Mất kết nối, đang thử lại…</div>
   </div>
@@ -334,7 +328,53 @@ function applyView() {
     zi.hidden = zoomRel < 1.05 && vy < 5;
     zi.textContent = (zoomRel >= 1.05 ? Math.round(zoomRel * 100) + '% · ' : '') + 'Dòng ' + Math.round(vy / 40 + 1) + '  ⤒';
   }
+  updRail();
 }
+/* thanh cuộn bên phải: chiều dài theo phần đã viết + thêm 1 màn hình trống bên dưới */
+function contentBottom() {
+  let m = 0;
+  (items[cur] || []).forEach((it) => {
+    if (it.pts) { for (let i = 1; i < it.pts.length; i += 2) if (it.pts[i] > m) m = it.pts[i]; }
+    else if (it.y2 != null) m = Math.max(m, it.y1, it.y2);
+    else if (it.y != null) m = Math.max(m, it.y + (it.h || 60));
+  });
+  return m;
+}
+let railMax = 0;
+function updRail() {
+  const rail = $('#rail'), th = $('#thumb');
+  if (!rail) return;
+  const vh = area.clientHeight / scale;
+  if (!rail.classList.contains('drag')) railMax = Math.min(MAXY, Math.max(contentBottom() + vh, vy + vh * 1.5, vh * 2.5));
+  const H = rail.clientHeight;
+  const tH = Math.max(48, H * vh / railMax);
+  th.style.height = tH + 'px';
+  th.style.top = ((H - tH) * vy / Math.max(1, railMax - vh)) + 'px';
+}
+(() => {
+  const rail = $('#rail'), th = $('#thumb');
+  let grab = null;
+  const setFromY = (clientY) => {
+    const r = rail.getBoundingClientRect(), tH = th.offsetHeight;
+    const vh = area.clientHeight / scale;
+    const f = Math.min(1, Math.max(0, (clientY - r.top - grab) / Math.max(1, r.height - tH)));
+    vy = f * (railMax - vh);
+    applyView();
+  };
+  rail.addEventListener('pointerdown', (e) => {
+    e.stopPropagation(); e.preventDefault();
+    const tr = th.getBoundingClientRect();
+    // chạm vào nút kéo: giữ đúng chỗ đang cầm; chạm vào rãnh: nút nhảy tới đó
+    grab = (e.clientY >= tr.top && e.clientY <= tr.bottom) ? e.clientY - tr.top : th.offsetHeight / 2;
+    rail.classList.add('drag');
+    try { rail.setPointerCapture(e.pointerId); } catch (er) { /* bỏ qua */ }
+    setFromY(e.clientY);
+  });
+  rail.addEventListener('pointermove', (e) => { if (grab != null) { e.stopPropagation(); setFromY(e.clientY); } });
+  const end = () => { if (grab == null) return; grab = null; rail.classList.remove('drag'); updRail(); };
+  rail.addEventListener('pointerup', end);
+  rail.addEventListener('pointercancel', end);
+})();
 function fit() {
   const r = area.getBoundingClientRect();
   if (r.width < 10 || r.height < 10) return;
@@ -448,7 +488,7 @@ function undo() {
   socket.emit('item:remove', { p: s.p, id: s.id });
 }
 $('#undoBtn').onclick = undo;
-$('#clearBtn').onclick = () => { if (confirm('Xóa toàn bộ nội dung trang này?')) socket.emit('page:clear', { id: cur }); };
+$('#clearBtn').onclick = () => socket.emit('page:clear', { id: cur });
 
 /* ---------- công cụ ---------- */
 function setTool(t) {
@@ -502,14 +542,7 @@ $('#shapeBtn').onclick = (e) => { e.stopPropagation(); openPop($('#shapePop'), e
 $('#colorBtn').onclick = (e) => { e.stopPropagation(); openPop($('#colorPop'), e.currentTarget); };
 $('#moreBtn').onclick = (e) => { e.stopPropagation(); openPop($('#morePop'), e.currentTarget); };
 $('#count').onclick = (e) => { e.stopPropagation(); openPop($('#usersPop'), e.currentTarget); };
-function setTopHidden(h) {
-  document.body.classList.toggle('top-hidden', h);
-  try { localStorage.setItem('bw_topHidden', h ? '1' : ''); } catch (er) { /* bỏ qua */ }
-  closePops();
-}
-$('#hideTop').onclick = () => setTopHidden(true);
-$('#showTop').onclick = () => setTopHidden(false);
-try { if (localStorage.getItem('bw_topHidden')) document.body.classList.add('top-hidden'); } catch (er) { /* bỏ qua */ }
+try { localStorage.removeItem('bw_topHidden'); } catch (er) { /* bỏ qua */ }
 $$('.pop').forEach((p) => p.addEventListener('click', (e) => e.stopPropagation()));
 document.addEventListener('click', closePops);
 document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.pop') && !e.target.closest('#shapeBtn,#colorBtn,#moreBtn,#count')) closePops(); });
@@ -527,7 +560,7 @@ function startPinch() {
   const [a, b] = [...touches.values()];
   const r = area.getBoundingClientRect();
   const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
-  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: zoomRel, bx: mx / scale + vx, by: my / scale + vy };
+  pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: zoomRel, zooming: false, bx: mx / scale + vx, by: my / scale + vy };
 }
 function cancelStroke() {
   // ngón thứ 2 chạm vào: bỏ nét vừa bắt đầu của ngón 1 (nếu còn ngắn) để không vẽ bậy
@@ -544,7 +577,7 @@ function cancelStroke() {
   redraw();
 }
 area.addEventListener('pointerdown', (e) => {
-  if (e.pointerType !== 'touch') return;
+  if (e.pointerType !== 'touch' || e.target.closest('.rail')) return;
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (touches.size === 2) { cancelStroke(); drag = null; startPinch(); }
 }, true);
@@ -556,8 +589,9 @@ area.addEventListener('pointermove', (e) => {
   const [a, b] = [...touches.values()];
   const r = area.getBoundingClientRect();
   const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
-  zoomRel = pinch.z * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.d);
-  zoomRel = Math.min(5, Math.max(1, zoomRel));
+  const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  if (!pinch.zooming && Math.abs(dist / pinch.d - 1) > 0.15) { pinch.zooming = true; pinch.d = dist; pinch.z = zoomRel; }
+  if (pinch.zooming) zoomRel = Math.min(5, Math.max(1, pinch.z * dist / pinch.d));
   scale = fitS * zoomRel;
   vx = pinch.bx - mx / scale; vy = pinch.by - my / scale;
   applyView();
@@ -567,6 +601,8 @@ const touchEnd = (e) => {
   if (touches.size < 2) pinch = null;
 };
 area.addEventListener('pointerup', touchEnd, true);
+// iPhone: chặn phóng to cả trang khi chụm 2 ngón
+['gesturestart', 'gesturechange'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault()));
 area.addEventListener('pointercancel', touchEnd, true);
 area.addEventListener('wheel', (e) => {
   if (e.defaultPrevented) return;
@@ -872,7 +908,7 @@ function addChat(m) {
   $('#chatBox').appendChild(d);
   $('#chatBox').scrollTop = 1e9;
   if (!mine && !live0 && !document.body.classList.contains('side-open')) {
-    $('#chatDot').hidden = false; $('#miniDot').hidden = false;
+    $('#chatDot').hidden = false;
     toast('💬 ' + m.name + ': ' + m.text.slice(0, 60));
   }
 }
@@ -892,11 +928,10 @@ $$('.stabs button').forEach((b) => (b.onclick = () => {
 }));
 function setSide(open) {
   document.body.classList.toggle('side-open', open);
-  if (open) { $('#chatDot').hidden = true; $('#miniDot').hidden = true; setTimeout(() => $('#chatIn').focus(), 200); }
+  if (open) { $('#chatDot').hidden = true; setTimeout(() => $('#chatIn').focus(), 200); }
 }
 $('#sideBtn').onclick = () => setSide(!document.body.classList.contains('side-open'));
 $('#sideClose').onclick = () => setSide(false);
-$('#miniChat').onclick = () => setSide(!document.body.classList.contains('side-open'));
 
 function renderUsers() {
   $('#count').textContent = users.length > 1 ? '🟢 ' + users.length : '⚪ 1';
@@ -1001,7 +1036,6 @@ function sendZap() {
   toast(users.length > 1 ? '⚡ Đã chích!' : '⚡ Chưa có ai trong phòng để chích');
 }
 $('#zapBtn').onclick = sendZap;
-$('#miniZap').onclick = sendZap;
 
 /* ---------- mic giảng bài (WebRTC) ---------- */
 function addIce(pc, c) {
