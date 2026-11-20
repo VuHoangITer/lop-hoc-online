@@ -115,6 +115,11 @@ body.top-hidden .mini{display:flex}
 .sel .ti,.sel .im{pointer-events:auto;cursor:move}
 .selected{border-color:#4f46e5!important}
 .laser{position:absolute;width:18px;height:18px;border-radius:50%;background:#ef4444;box-shadow:0 0 12px 6px #ef444488;transform:translate(-50%,-50%);pointer-events:none;display:none}
+.zapFlash{position:fixed;inset:0;z-index:150;pointer-events:none;background:radial-gradient(circle,#fff9 0%,#60a5fa66 40%,#facc1533 70%,transparent 100%);animation:zapF .7s steps(7) forwards}
+@keyframes zapF{0%,28%,56%{opacity:1}14%,42%,70%{opacity:.15}100%{opacity:0}}
+body.shake{animation:shake .6s}
+@keyframes shake{0%,100%{transform:none}10%{transform:translate(-6px,3px)}20%{transform:translate(5px,-4px)}30%{transform:translate(-4px,-2px)}40%{transform:translate(6px,4px)}50%{transform:translate(-5px,2px)}60%{transform:translate(4px,-3px)}70%{transform:translate(-3px,3px)}80%{transform:translate(2px,-2px)}}
+#zapBtn,#miniZap{font-size:19px}
 .zoomInfo{position:absolute;right:8px;bottom:8px;background:#0f172acc;color:#fff;padding:6px 12px;border-radius:99px;font-size:12px;z-index:15;border:0;cursor:pointer}
 .banner{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:6px 14px;border-radius:99px;z-index:20}
 
@@ -156,6 +161,7 @@ body.side-open .side{transform:none}
   <button id="count" title="Ai đang trong phòng">👥 0</button>
   <button class="ib" id="listenBtn" hidden title="Nghe mic người kia">🔊</button>
   <button class="ib" id="micBtn" title="Bật/tắt mic">🎤</button>
+  <button class="ib" id="zapBtn" title="Chích điện người kia ⚡">⚡</button>
   <button class="ib" id="sideBtn" title="Chat">💬<i class="dot" id="chatDot" hidden></i></button>
   <button class="ib" id="moreBtn" title="Thêm">⋯</button>
   <button class="ib" id="hideTop" title="Ẩn thanh trên cho bảng rộng hơn">⛶</button>
@@ -210,6 +216,7 @@ body.side-open .side{transform:none}
   </div>
 
   <div class="mini" id="mini">
+    <button class="ib" id="miniZap" title="Chích điện người kia ⚡">⚡</button>
     <button class="ib" id="miniChat" title="Chat">💬<i class="dot" id="miniDot" hidden></i></button>
     <button class="ib" id="showTop" title="Hiện thanh trên">☰</button>
   </div>
@@ -927,6 +934,75 @@ function renderUsers() {
 }
 $('#handBtn').onclick = () => socket.emit('hand', { value: !hands.some((h) => h.id === me.id) });
 
+/* ---------- ⚡ chích điện ---------- */
+let ac = null;
+function getAC() {
+  if (!ac) { const C = window.AudioContext || window.webkitAudioContext; if (C) ac = new C(); }
+  if (ac && ac.state === 'suspended') ac.resume();
+  return ac;
+}
+// trình duyệt điện thoại chỉ cho phát tiếng sau khi người dùng chạm vào trang
+document.addEventListener('pointerdown', () => getAC(), { once: true, capture: true });
+function zapSound() {
+  const a = getAC();
+  if (!a) return;
+  const t = a.currentTime, dur = 0.85;
+  const out = a.createGain();
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(0.32, t + 0.02);
+  out.gain.setValueAtTime(0.32, t + dur - 0.15);
+  out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  out.connect(a.destination);
+  // tiếng "rè rè" của dòng điện: sóng răng cưa tần số thấp, bóp méo cho gắt
+  const shaper = a.createWaveShaper();
+  const curve = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 6); }
+  shaper.curve = curve;
+  const buzzG = a.createGain();
+  buzzG.gain.value = 0.5;
+  [58, 117, 176].forEach((f, i) => {
+    const o = a.createOscillator();
+    o.type = i === 1 ? 'square' : 'sawtooth';
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.linearRampToValueAtTime(f * 1.08, t + dur);
+    o.connect(shaper); o.start(t); o.stop(t + dur);
+  });
+  shaper.connect(buzzG);
+  // nhấp nháy 25 lần/giây như tia lửa điện
+  const lfo = a.createOscillator(), lfoG = a.createGain();
+  lfo.type = 'square'; lfo.frequency.value = 25; lfoG.gain.value = 0.45;
+  lfo.connect(lfoG); lfoG.connect(buzzG.gain); lfo.start(t); lfo.stop(t + dur);
+  buzzG.connect(out);
+  // tiếng lách tách: nhiễu trắng lọc cao, bật tắt ngẫu nhiên
+  const n = Math.floor(a.sampleRate * dur), buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
+  let on = 1;
+  for (let i = 0; i < n; i++) { if (i % 400 === 0) on = Math.random() < 0.55 ? 1 : 0; d[i] = (Math.random() * 2 - 1) * on; }
+  const noise = a.createBufferSource(); noise.buffer = buf;
+  const hp = a.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+  const nG = a.createGain(); nG.gain.value = 0.35;
+  noise.connect(hp); hp.connect(nG); nG.connect(out); noise.start(t);
+}
+function zapEffect() {
+  zapSound();
+  const f = document.createElement('div');
+  f.className = 'zapFlash';
+  document.body.appendChild(f);
+  setTimeout(() => f.remove(), 800);
+  document.body.classList.remove('shake'); void document.body.offsetWidth; document.body.classList.add('shake');
+  setTimeout(() => document.body.classList.remove('shake'), 650);
+  if (navigator.vibrate) navigator.vibrate([90, 40, 90, 40, 160]);
+}
+let lastZapSend = 0;
+function sendZap() {
+  if (!socket || Date.now() - lastZapSend < 800) return;
+  lastZapSend = Date.now();
+  socket.emit('zap');
+  zapSound();
+  toast(users.length > 1 ? '⚡ Đã chích!' : '⚡ Chưa có ai trong phòng để chích');
+}
+$('#zapBtn').onclick = sendZap;
+$('#miniZap').onclick = sendZap;
+
 /* ---------- mic giảng bài (WebRTC) ---------- */
 function addIce(pc, c) {
   if (pc.remoteDescription) pc.addIceCandidate(c).catch(() => {});
@@ -1076,6 +1152,7 @@ function connect() {
   socket.on('users', (u) => { users = u; renderUsers(); });
   socket.on('hands', (h) => { hands = h; renderUsers(); });
   socket.on('voice', onVoice);
+  socket.on('zap', ({ name }) => { zapEffect(); toast('⚡ ' + name + ' chích điện bạn! Làm lại đi 😆'); });
   socket.on('rtc:ready', ({ id }) => { if (micStream) callStudent(id); });
   socket.on('rtc:signal', async ({ from, data }) => {
     try {

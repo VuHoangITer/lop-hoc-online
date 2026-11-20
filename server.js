@@ -302,6 +302,15 @@ io.on('connection', (sock) => {
     if (lv.chat.length > 200) lv.chat.shift();
     io.to(room.code).emit('chat', m);
   });
+  /* ⚡ chích điện: phát âm thanh trên máy người kia */
+  let lastZap = 0;
+  on('zap', () => {
+    if (!room) return;
+    const now = Date.now();
+    if (now - lastZap < 800) return;
+    lastZap = now;
+    sock.to(room.code).emit('zap', { name });
+  });
   on('hand', (d) => {
     if (!room || isT()) return;
     const lv = getLive(room.code);
