@@ -111,6 +111,7 @@ input[type=color]{width:34px;height:30px;padding:0;border:1px solid #cbd5e1;bord
 .im img{width:100%;height:100%;display:block;pointer-events:none;-webkit-user-drag:none}
 .sel .ti,.sel .im{pointer-events:auto;cursor:move}
 .selected{border-color:#4f46e5!important}
+.ti.rm,.im.rm{transition:left .09s linear,top .09s linear,width .09s linear,height .09s linear,font-size .09s linear}
 .hdl{position:absolute;right:calc(-14px * var(--inv,1));bottom:calc(-14px * var(--inv,1));width:calc(28px * var(--inv,1));height:calc(28px * var(--inv,1));border-radius:50%;background:#4f46e5;border:calc(3px * var(--inv,1)) solid #fff;box-shadow:0 1px 4px #0005;cursor:nwse-resize;touch-action:none;display:none}
 .selected .hdl{display:block}
 .selBar{position:absolute;z-index:16;display:flex;gap:2px;background:#fff;border-radius:12px;padding:3px;box-shadow:0 2px 10px #0003;transform:translateX(-50%)}
@@ -874,7 +875,7 @@ window.addEventListener('pointermove', (e) => {
 });
 function sendDrag() {
   const now = performance.now();
-  if (now - drag.last > 50) {
+  if (now - drag.last > 30) {
     drag.last = now;
     socket.emit('item:update', { p: cur, id: drag.it.id, patch: drag.patch });
   }
@@ -1336,7 +1337,18 @@ function connect() {
     const it = findItem(id, p);
     if (!it) return;
     Object.assign(it, patch);
-    if (p === cur) { const el = domEls[id]; if (el) { dom.removeChild(el); delete domEls[id]; addDomEl(it); } placeSelBar(); }
+    if (p !== cur) return;
+    const el = domEls[id];
+    if (!el) return;
+    if (Object.keys(patch).every((key) => ['x', 'y', 'w', 'h', 'size'].includes(key))) {
+      // chỉ dời / đổi cỡ: sửa tại chỗ, trượt mượt thay vì vẽ lại cả ảnh
+      el.classList.add('rm');
+      clearTimeout(el._rmT);
+      el._rmT = setTimeout(() => el.classList.remove('rm'), 200);
+      posEl(el, it);
+      if (it.t === 'text') el.style.fontSize = it.size + 'px';
+    } else { dom.removeChild(el); delete domEls[id]; addDomEl(it); }
+    placeSelBar();
   });
   socket.on('item:remove', ({ p, id }) => removeLocal(p, id));
   socket.on('page:clear', ({ p }) => { items[p] = []; if (p === cur) { redraw(); renderDom(); } myStack = myStack.filter((s) => s.p !== p); });
