@@ -139,6 +139,8 @@ function sanitizePatch(it, patch) {
 /* Chỉ có 1 lớp, ai vào cũng có toàn quyền. */
 const ROOM = 'LOP';
 const TITLE = (process.env.CLASS_TITLE || '').trim().slice(0, 60);
+// mã PIN để cộng/trừ điểm (đặt biến môi trường SCORE_PIN trên Render)
+const SCORE_PIN = String(process.env.SCORE_PIN || '1234').trim();
 if (!rooms[ROOM]) {
   const first = newPage('Trang 1', 'grid');
   const now = Date.now();
@@ -147,6 +149,8 @@ if (!rooms[ROOM]) {
 }
 rooms[ROOM].title = TITLE || 'Phụ đạo';
 if (!rooms[ROOM].score) rooms[ROOM].score = { total: 0, log: [], updated: 0 };
+// đã có người chấm điểm từ lúc server chạy thì không nhận bản sao từ trình duyệt nữa
+let scoreLive = false;
 
 const page = path.join(__dirname, 'public', 'room.html');
 app.get('/', (req, res) => res.sendFile(page));
@@ -317,10 +321,13 @@ io.on('connection', (sock) => {
   });
   /* ⚡ chích điện: phát âm thanh trên máy người kia */
   /* ⭐ bảng điểm: lưu trong rooms.json cùng bảng */
-  on('score:add', (d) => {
+  on('score:pin', (d, ack) => ack({ ok: safeEq(d.pin || '', SCORE_PIN) }));
+  on('score:add', (d, ack) => {
     if (!room) return;
+    if (!safeEq(d.pin || '', SCORE_PIN)) return ack({ error: 'pin' });
     const delta = Math.trunc(Number(d.d));
     if (!delta || Math.abs(delta) > 100) return;
+    scoreLive = true;
     const sc = room.score;
     sc.total += delta;
     sc.updated = Date.now();
@@ -328,12 +335,13 @@ io.on('connection', (sock) => {
     sc.log = sc.log.slice(0, 200);
     touch();
     io.to(room.code).emit('score', { ...sc, last: sc.log[0] });
+    ack({ ok: true });
   });
   // server vừa khởi động lại (mất file) thì lấy lại điểm từ bản sao trong trình duyệt
   on('score:restore', (d) => {
     if (!room) return;
     const up = Number(d.updated) || 0;
-    if (up <= room.score.updated || up > Date.now() + 60000) return;
+    if (scoreLive || up <= room.score.updated || up > Date.now() + 60000) return;
     const log = (Array.isArray(d.log) ? d.log : []).slice(0, 200).map((e) => ({
       t: Number(e && e.t) || 0, d: Math.trunc(Number(e && e.d)) || 0,
       by: String((e && e.by) || '').slice(0, 30), why: String((e && e.why) || '').slice(0, 60),

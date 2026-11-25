@@ -138,6 +138,11 @@ body.shake{animation:shake .6s}
 .scBig{font-size:30px;font-weight:800;text-align:center;color:#b45309}
 #scoreWhy{padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;width:100%}
 .scBtns{display:flex;gap:6px}
+.scorePop:not(.unlocked) .scBtns,.scorePop:not(.unlocked) #scoreWhy,.scorePop:not(.unlocked) .scLock{display:none}
+.scorePop.unlocked .pinRow{display:none}
+.pinRow{display:flex;gap:6px}
+.pinRow input{flex:1;min-width:0;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px}
+.scLock{border:0;background:none;color:#64748b;font-size:12px;cursor:pointer;align-self:flex-end;padding:0}
 .scBtns button{flex:1;height:42px;border-radius:10px;border:0;font-size:17px;font-weight:700;cursor:pointer;background:#dcfce7;color:#166534}
 .scBtns button.m{background:#fee2e2;color:#991b1b}
 .scBtns button:active{transform:scale(.94)}
@@ -198,11 +203,13 @@ body.shake{animation:shake .6s}
 </div>
 <div class="pop scorePop" id="scorePop" hidden>
   <div class="scBig">⭐ <span id="scoreBig">0</span> điểm</div>
+  <div class="pinRow"><input id="pinIn" type="password" inputmode="numeric" autocomplete="off" placeholder="Mã PIN để chấm điểm" maxlength="20"><button class="btn pri" id="pinOk">Mở</button></div>
   <input id="scoreWhy" placeholder="Lý do (không bắt buộc), vd: làm đúng bài 3" maxlength="60">
   <div class="scBtns">
     <button class="m" data-d="-5">−5</button><button class="m" data-d="-1">−1</button>
     <button data-d="1">+1</button><button data-d="5">+5</button><button data-d="10">+10</button>
   </div>
+  <button class="scLock" id="scLock" title="Quên mã PIN trên máy này">🔒 Khóa máy này</button>
   <div class="scLog" id="scoreLog"></div>
 </div>
 <div class="pop" id="usersPop" hidden><div class="ulist" id="ulist"></div></div>
@@ -1359,9 +1366,31 @@ function scoreFx(e) {
   scoreSound(up);
   toast((e.by === myName ? 'Bạn' : e.by) + (up ? ' cộng ' : ' trừ ') + Math.abs(e.d) + ' điểm' + (e.why ? ': ' + e.why : '') + ' · Tổng ' + score.total);
 }
+// chỉ máy đã nhập đúng mã PIN mới được cộng/trừ (máy em chỉ xem)
+let pin = '';
+try { pin = localStorage.getItem('bw_pin') || ''; } catch (e) { pin = ''; }
+function setPin(v) {
+  pin = v;
+  try { if (v) localStorage.setItem('bw_pin', v); else localStorage.removeItem('bw_pin'); } catch (e) { /* bỏ qua */ }
+  $('#scorePop').classList.toggle('unlocked', !!v);
+}
+setPin(pin);
+function tryPin() {
+  const v = $('#pinIn').value.trim();
+  if (!v || !socket) return;
+  socket.emit('score:pin', { pin: v }, (r) => {
+    if (r && r.ok) { setPin(v); $('#pinIn').value = ''; toast('🔓 Máy này đã được chấm điểm'); }
+    else { $('#pinIn').value = ''; toast('Sai mã PIN'); }
+  });
+}
+$('#pinOk').onclick = tryPin;
+$('#pinIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') tryPin(); });
+$('#scLock').onclick = () => { setPin(''); toast('🔒 Đã khóa chấm điểm trên máy này'); };
 $$('#scorePop .scBtns button').forEach((b) => (b.onclick = () => {
-  if (!socket) return;
-  socket.emit('score:add', { d: +b.dataset.d, why: $('#scoreWhy').value });
+  if (!socket || !pin) return;
+  socket.emit('score:add', { d: +b.dataset.d, why: $('#scoreWhy').value, pin }, (r) => {
+    if (r && r.error === 'pin') { setPin(''); toast('Mã PIN đã đổi, nhập lại nhé'); }
+  });
   $('#scoreWhy').value = '';
 }));
 $('#scoreBtn').onclick = (e) => { e.stopPropagation(); openPop($('#scorePop'), e.currentTarget); };
