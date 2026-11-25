@@ -97,7 +97,8 @@ input[type=color]{width:34px;height:30px;padding:0;border:1px solid #cbd5e1;bord
 @media (max-width:500px){ .top h1{display:none} }
 
 .area{flex:1;min-width:0;position:relative;background:#e2e8f0;overflow:hidden}
-#stage{position:absolute;inset:0;background-color:#fff;overflow:hidden;touch-action:none}
+#stage{position:absolute;top:0;bottom:0;left:0;right:0;margin:0 auto;width:min(100%,760px);background-color:#fff;overflow:hidden;touch-action:none;box-shadow:0 0 18px #0f172a22}
+.area{background:#e2e8f0}
 .area{touch-action:none}
 .bg-grid{background-image:linear-gradient(#cfe0f0 1px,transparent 1px),linear-gradient(90deg,#cfe0f0 1px,transparent 1px);background-size:var(--u) var(--u)}
 .bg-lined{background-image:linear-gradient(#cfe0f0 1px,transparent 1px);background-size:100% calc(var(--u) * 1.5)}
@@ -110,6 +111,11 @@ input[type=color]{width:34px;height:30px;padding:0;border:1px solid #cbd5e1;bord
 .im img{width:100%;height:100%;display:block;pointer-events:none;-webkit-user-drag:none}
 .sel .ti,.sel .im{pointer-events:auto;cursor:move}
 .selected{border-color:#4f46e5!important}
+.hdl{position:absolute;right:calc(-14px * var(--inv,1));bottom:calc(-14px * var(--inv,1));width:calc(28px * var(--inv,1));height:calc(28px * var(--inv,1));border-radius:50%;background:#4f46e5;border:calc(3px * var(--inv,1)) solid #fff;box-shadow:0 1px 4px #0005;cursor:nwse-resize;touch-action:none;display:none}
+.selected .hdl{display:block}
+.selBar{position:absolute;z-index:16;display:flex;gap:2px;background:#fff;border-radius:12px;padding:3px;box-shadow:0 2px 10px #0003;transform:translateX(-50%)}
+.selBar button{width:36px;height:34px;border:0;background:none;border-radius:9px;font-size:17px;cursor:pointer}
+.selBar button:active{background:#e0e7ff}
 .laser{position:absolute;width:18px;height:18px;border-radius:50%;background:#ef4444;box-shadow:0 0 12px 6px #ef444488;transform:translate(-50%,-50%);pointer-events:none;display:none}
 .zapFlash{position:fixed;inset:0;z-index:150;pointer-events:none;background:radial-gradient(circle,#fff9 0%,#60a5fa66 40%,#facc1533 70%,transparent 100%);animation:zapF .7s steps(7) forwards}
 @keyframes zapF{0%,28%,56%{opacity:1}14%,42%,70%{opacity:.15}100%{opacity:0}}
@@ -219,6 +225,11 @@ body.side-open .side{transform:none}
       <div id="dom"></div>
       <div class="laser" id="laser"></div>
     </div>
+    <div class="selBar" id="selBar" hidden>
+      <button id="sbSmall" title="Nhỏ lại">➖</button><button id="sbBig" title="To lên">➕</button>
+      <button id="sbRot" title="Xoay 90°">⟳</button><button id="sbFlip" title="Lật ngang">⇋</button>
+      <button id="sbEdit" title="Sửa chữ">✎</button><button id="sbDel" title="Xóa">🗑</button>
+    </div>
     <div class="rail" id="rail" title="Kéo để cuộn bảng lên/xuống"><div class="thumb" id="thumb">⇕</div></div>
     <button class="zoomInfo" id="zoomInfo" hidden title="Bấm để về đầu trang, cỡ vừa màn hình"></button>
     <div class="banner" id="banner" hidden>Mất kết nối, đang thử lại…</div>
@@ -308,7 +319,7 @@ function toast(msg) {
 /* Bảng rộng W=1600 đơn vị, dài tới MAXY. Mặc định vừa khít chiều ngang màn hình,
    2 ngón tay để kéo lên/xuống và phóng to. */
 function clampView() {
-  const r = area.getBoundingClientRect();
+  const r = stage.getBoundingClientRect();
   zoomRel = Math.min(5, Math.max(1, zoomRel));
   scale = fitS * zoomRel;
   const vw = r.width / scale, vh = r.height / scale;
@@ -329,7 +340,30 @@ function applyView() {
     zi.textContent = (zoomRel >= 1.05 ? Math.round(zoomRel * 100) + '% · ' : '') + 'Dòng ' + Math.round(vy / 40 + 1) + '  ⤒';
   }
   updRail();
+  dom.style.setProperty('--inv', 1 / scale);
+  placeSelBar();
+  sendView();
 }
+/* ---- màn hình người kia cuộn theo mình ---- */
+let remoteView = false, lastView = '', viewT = null, pendView = null;
+function sendView() {
+  if (remoteView || !socket || !cur) return;
+  const key = cur + ':' + Math.round(vx) + ':' + Math.round(vy);
+  if (key === lastView) return;
+  lastView = key;
+  if (viewT) return;
+  viewT = setTimeout(() => { viewT = null; socket.emit('view', { p: cur, x: Math.round(vx), y: Math.round(vy) }); }, 60);
+}
+function busy() { return drawing || drag || touches.size > 0 || $('#rail').classList.contains('drag'); }
+function takeView(v) {
+  if (v.p !== cur) return;
+  if (busy()) { pendView = v; return; }
+  pendView = null;
+  vx = v.x; vy = v.y;
+  remoteView = true; applyView(); remoteView = false;
+  lastView = cur + ':' + Math.round(vx) + ':' + Math.round(vy);
+}
+window.addEventListener('pointerup', () => setTimeout(() => { if (pendView && !busy()) takeView(pendView); }, 80));
 /* thanh cuộn bên phải: chiều dài theo phần đã viết + thêm 1 màn hình trống bên dưới */
 function contentBottom() {
   let m = 0;
@@ -344,7 +378,7 @@ let railMax = 0;
 function updRail() {
   const rail = $('#rail'), th = $('#thumb');
   if (!rail) return;
-  const vh = area.clientHeight / scale;
+  const vh = stage.clientHeight / scale;
   if (!rail.classList.contains('drag')) railMax = Math.min(MAXY, Math.max(contentBottom() + vh, vy + vh * 1.5, vh * 2.5));
   const H = rail.clientHeight;
   const tH = Math.max(48, H * vh / railMax);
@@ -356,7 +390,7 @@ function updRail() {
   let grab = null;
   const setFromY = (clientY) => {
     const r = rail.getBoundingClientRect(), tH = th.offsetHeight;
-    const vh = area.clientHeight / scale;
+    const vh = stage.clientHeight / scale;
     const f = Math.min(1, Math.max(0, (clientY - r.top - grab) / Math.max(1, r.height - tH)));
     vy = f * (railMax - vh);
     applyView();
@@ -376,7 +410,7 @@ function updRail() {
   rail.addEventListener('pointercancel', end);
 })();
 function fit() {
-  const r = area.getBoundingClientRect();
+  const r = stage.getBoundingClientRect();
   if (r.width < 10 || r.height < 10) return;
   fitS = r.width / W;
   const dpr = window.devicePixelRatio || 1;
@@ -457,6 +491,9 @@ function addDomEl(it) {
     el.className = 'im';
     const im = new Image(); im.src = it.src; el.appendChild(im);
   }
+  const h = document.createElement('i');
+  h.className = 'hdl';
+  el.appendChild(h);
   posEl(el, it);
   if (it.id === selId) el.classList.add('selected');
   dom.appendChild(el);
@@ -479,7 +516,7 @@ function addLocal(it) {
 function removeLocal(p, id) {
   if (!items[p]) return;
   items[p] = items[p].filter((i) => i.id !== id);
-  if (p === cur) { redraw(); renderDom(); }
+  if (p === cur) { redraw(); renderDom(); placeSelBar(); }
 }
 function undo() {
   const s = myStack.pop();
@@ -549,7 +586,7 @@ document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.pop') 
 setColor(color);
 
 const toV = (e) => {
-  const r = area.getBoundingClientRect();
+  const r = stage.getBoundingClientRect();
   return { x: Math.round(((e.clientX - r.left) / scale + vx) * 10) / 10, y: Math.round(((e.clientY - r.top) / scale + vy) * 10) / 10 };
 };
 
@@ -558,7 +595,7 @@ const touches = new Map();
 let pinch = null;
 function startPinch() {
   const [a, b] = [...touches.values()];
-  const r = area.getBoundingClientRect();
+  const r = stage.getBoundingClientRect();
   const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
   pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, z: zoomRel, zooming: false, bx: mx / scale + vx, by: my / scale + vy };
 }
@@ -587,7 +624,7 @@ area.addEventListener('pointermove', (e) => {
   if (!pinch || touches.size < 2) return;
   e.stopPropagation();
   const [a, b] = [...touches.values()];
-  const r = area.getBoundingClientRect();
+  const r = stage.getBoundingClientRect();
   const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
   const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
   if (!pinch.zooming && Math.abs(dist / pinch.d - 1) > 0.15) { pinch.zooming = true; pinch.d = dist; pinch.z = zoomRel; }
@@ -607,7 +644,7 @@ area.addEventListener('pointercancel', touchEnd, true);
 area.addEventListener('wheel', (e) => {
   if (e.defaultPrevented) return;
   e.preventDefault();
-  const r = area.getBoundingClientRect();
+  const r = stage.getBoundingClientRect();
   if (e.ctrlKey) {
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     const bx = mx / scale + vx, by = my / scale + vy;
@@ -695,7 +732,68 @@ cv.addEventListener('pointercancel', endDraw);
 function select(id) {
   selId = id;
   Object.entries(domEls).forEach(([i, el]) => el.classList.toggle('selected', i === id));
+  placeSelBar();
 }
+function placeSelBar() {
+  const bar = $('#selBar');
+  if (!bar) return;
+  const it = selId && findItem(selId), el = selId && domEls[selId];
+  if (!it || !el || tool !== 'select') { bar.hidden = true; return; }
+  const isImg = it.t === 'img';
+  $('#sbRot').hidden = $('#sbFlip').hidden = !isImg;
+  $('#sbEdit').hidden = isImg;
+  bar.hidden = false;
+  const sr = stage.getBoundingClientRect(), ar = area.getBoundingClientRect(), er = el.getBoundingClientRect();
+  const bw = bar.offsetWidth, bh = bar.offsetHeight;
+  let x = er.left + er.width / 2 - ar.left;
+  x = Math.min(Math.max(x, bw / 2 + 4), ar.width - bw / 2 - 34);
+  let y = er.top - ar.top - bh - 8;
+  if (y < 4) y = Math.min(er.bottom - ar.top + 8, ar.height - bh - 4);
+  if (y < 4) y = 4;
+  bar.style.left = x + 'px'; bar.style.top = y + 'px';
+  void sr;
+}
+function updItem(it, patch) {
+  Object.assign(it, patch);
+  const el = domEls[it.id];
+  if (el) { dom.removeChild(el); delete domEls[it.id]; addDomEl(it); }
+  socket.emit('item:update', { p: cur, id: it.id, patch });
+  placeSelBar();
+}
+function zoomSel(f) {
+  const it = selId && findItem(selId);
+  if (!it) return;
+  if (it.t === 'img') {
+    const w = Math.round(Math.min(3000, Math.max(30, it.w * f)));
+    updItem(it, { w, h: Math.round(it.h * w / it.w) });
+  } else updItem(it, { size: Math.round(Math.min(400, Math.max(8, it.size * f))) });
+}
+// xoay / lật ảnh: vẽ lại ảnh lên canvas rồi gửi ảnh mới
+function transformImg(it, mode) {
+  const im = new Image();
+  im.onload = () => {
+    const rot = mode === 'rot';
+    const c = document.createElement('canvas');
+    c.width = rot ? im.naturalHeight : im.naturalWidth; c.height = rot ? im.naturalWidth : im.naturalHeight;
+    const g = c.getContext('2d');
+    if (rot) { g.translate(c.width, 0); g.rotate(Math.PI / 2); } else { g.translate(c.width, 0); g.scale(-1, 1); }
+    g.drawImage(im, 0, 0);
+    const src = c.toDataURL('image/jpeg', 0.88);
+    updItem(it, rot ? { src, w: it.h, h: it.w } : { src });
+  };
+  im.src = it.src;
+}
+const selBtn = (id, fn) => {
+  const b = $(id);
+  b.addEventListener('pointerdown', (e) => e.stopPropagation());
+  b.onclick = (e) => { e.stopPropagation(); const it = selId && findItem(selId); if (it) fn(it); };
+};
+selBtn('#sbSmall', () => zoomSel(1 / 1.2));
+selBtn('#sbBig', () => zoomSel(1.2));
+selBtn('#sbRot', (it) => transformImg(it, 'rot'));
+selBtn('#sbFlip', (it) => transformImg(it, 'flip'));
+selBtn('#sbEdit', (it) => openEditor(null, it));
+selBtn('#sbDel', (it) => { socket.emit('item:remove', { p: cur, id: it.id }); removeLocal(cur, it.id); select(null); });
 dom.addEventListener('pointerdown', (e) => {
   if (tool !== 'select' || !isT()) return;
   const el = e.target.closest('[data-id]');
@@ -703,24 +801,42 @@ dom.addEventListener('pointerdown', (e) => {
   const it = findItem(el.dataset.id);
   if (!it) return;
   select(it.id);
-  drag = { it, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, last: 0 };
+  const r0 = el.getBoundingClientRect();
+  drag = { it, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, last: 0,
+    resize: !!e.target.closest('.hdl'), d0: Math.hypot(r0.width, r0.height) || 1, left: r0.left, top: r0.top, w0: it.w, h0: it.h, s0: it.size };
   e.preventDefault();
+  e.stopPropagation();
 });
 window.addEventListener('pointermove', (e) => {
   if (!drag) return;
-  drag.it.x = Math.round(drag.ox + (e.clientX - drag.sx) / scale);
-  drag.it.y = Math.round(drag.oy + (e.clientY - drag.sy) / scale);
-  const el = domEls[drag.it.id];
-  if (el) posEl(el, drag.it);
+  if (touches.size > 1) { drag = null; return; }
+  const it = drag.it, el = domEls[it.id];
+  let patch;
+  if (drag.resize) {
+    const f = Math.max(0.05, Math.hypot(e.clientX - drag.left, e.clientY - drag.top) / drag.d0);
+    if (it.t === 'img') {
+      it.w = Math.round(Math.min(3000, Math.max(30, drag.w0 * f)));
+      it.h = Math.round(drag.h0 * it.w / drag.w0);
+      patch = { w: it.w, h: it.h }; if (el) posEl(el, it);
+    }
+    else { it.size = Math.round(Math.min(400, Math.max(8, drag.s0 * f))); patch = { size: it.size }; if (el) el.style.fontSize = it.size + 'px'; }
+  } else {
+    it.x = Math.round(drag.ox + (e.clientX - drag.sx) / scale);
+    it.y = Math.round(drag.oy + (e.clientY - drag.sy) / scale);
+    patch = { x: it.x, y: it.y };
+    if (el) posEl(el, it);
+  }
+  drag.patch = patch;
+  placeSelBar();
   const now = performance.now();
   if (now - drag.last > 50) {
     drag.last = now;
-    socket.emit('item:update', { p: cur, id: drag.it.id, patch: { x: drag.it.x, y: drag.it.y } });
+    socket.emit('item:update', { p: cur, id: it.id, patch });
   }
 });
 window.addEventListener('pointerup', () => {
   if (!drag) return;
-  socket.emit('item:update', { p: cur, id: drag.it.id, patch: { x: drag.it.x, y: drag.it.y } });
+  if (drag.patch) socket.emit('item:update', { p: cur, id: drag.it.id, patch: drag.patch });
   drag = null;
 });
 dom.addEventListener('wheel', (e) => {
@@ -776,7 +892,7 @@ function openEditor(pt, it) {
   edCtx = { pt, it };
   edText.value = it ? it.content : '';
   $('#edSize').value = it ? String(it.size) : '40';
-  if (it && ![28, 40, 56, 80].includes(it.size)) $('#edSize').value = '40';
+  if (it && ![...$('#edSize').options].some((o) => +o.value === it.size)) { const o = document.createElement('option'); o.value = o.textContent = String(it.size); $('#edSize').appendChild(o); $('#edSize').value = String(it.size); }
   $('#editor').hidden = false;
   updPrev(); edText.focus();
 }
@@ -818,11 +934,13 @@ function insertImage(file) {
     const src = c.toDataURL('image/jpeg', 0.85);
     let dw = Math.min(w, 900), dh = Math.round(h * dw / w);
     if (dh > 760) { dh = 760; dw = Math.round(w * dh / h); }
-    const vw = area.clientWidth / scale;
+    const vw = stage.clientWidth / scale;
     if (dw > vw * 0.9) { dh = Math.round(dh * vw * 0.9 / dw); dw = Math.round(vw * 0.9); }
-    addLocal({ id: uid(), t: 'img', x: Math.round(vx + vw * 0.05), y: Math.round(vy + 20), w: dw, h: dh, src });
+    const nid = uid();
+    addLocal({ id: nid, t: 'img', x: Math.round(vx + vw * 0.05), y: Math.round(vy + 20), w: dw, h: dh, src });
     URL.revokeObjectURL(url);
     setTool('select');
+    select(nid);
   };
   im.src = url;
 }
@@ -1155,7 +1273,7 @@ function connect() {
     const it = findItem(id, p);
     if (!it) return;
     Object.assign(it, patch);
-    if (p === cur) { const el = domEls[id]; if (el) { dom.removeChild(el); delete domEls[id]; addDomEl(it); } }
+    if (p === cur) { const el = domEls[id]; if (el) { dom.removeChild(el); delete domEls[id]; addDomEl(it); } placeSelBar(); }
   });
   socket.on('item:remove', ({ p, id }) => removeLocal(p, id));
   socket.on('page:clear', ({ p }) => { items[p] = []; if (p === cur) { redraw(); renderDom(); } myStack = myStack.filter((s) => s.p !== p); });
@@ -1186,6 +1304,7 @@ function connect() {
   socket.on('users', (u) => { users = u; renderUsers(); });
   socket.on('hands', (h) => { hands = h; renderUsers(); });
   socket.on('voice', onVoice);
+  socket.on('view', takeView);
   socket.on('zap', ({ name }) => { zapEffect(); toast('⚡ ' + name + ' chích điện bạn! Làm lại đi 😆'); });
   socket.on('rtc:ready', ({ id }) => { if (micStream) callStudent(id); });
   socket.on('rtc:signal', async ({ from, data }) => {

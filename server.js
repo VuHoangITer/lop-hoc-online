@@ -94,7 +94,7 @@ function sanitizeItem(it, author) {
       };
     case 'text':
       return {
-        ...base, t: 'text', c: col(it.c), size: num(it.size, 12, 200, 40),
+        ...base, t: 'text', c: col(it.c), size: num(it.size, 8, 400, 40),
         x: num(it.x, -1000, 21000), y: num(it.y, -1000, 21000),
         content: String(it.content || '').slice(0, 2000),
       };
@@ -120,9 +120,14 @@ function sanitizePatch(it, patch) {
   if (it.t === 'img') {
     if ('w' in patch) P.w = num(patch.w, 10, 3000, it.w);
     if ('h' in patch) P.h = num(patch.h, 10, 3000, it.h);
+    // xoay / lật ảnh: máy gửi lại ảnh đã xoay
+    if ('src' in patch) {
+      const src = String(patch.src || '');
+      if (/^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src) && src.length <= 1.8e6) P.src = src;
+    }
   }
   if (it.t === 'text') {
-    if ('size' in patch) P.size = num(patch.size, 12, 200, it.size);
+    if ('size' in patch) P.size = num(patch.size, 8, 400, it.size);
     if ('content' in patch) P.content = String(patch.content).slice(0, 2000);
     if ('c' in patch) P.c = col(patch.c);
   }
@@ -230,6 +235,12 @@ io.on('connection', (sock) => {
   on('laser', (d) => {
     if (!room || !isT()) return;
     sock.volatile.to(room.code).emit('laser', { x: num(d.x, -1000, 21000), y: num(d.y, -1000, 21000), on: !!d.on });
+  });
+
+  /* màn hình người kia cuộn theo */
+  on('view', (d) => {
+    if (!room || !d) return;
+    sock.volatile.to(room.code).emit('view', { p: String(d.p || ''), x: num(d.x, 0, 21000), y: num(d.y, 0, 21000) });
   });
 
   /* --- trang --- */
