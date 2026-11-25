@@ -352,8 +352,9 @@ io.on('connection', (sock) => {
   });
 
   let lastZap = 0;
-  on('zap', () => {
+  on('zap', (d, ack) => {
     if (!room) return;
+    if (!safeEq(d.pin || '', SCORE_PIN)) return ack({ error: 'pin' });
     const now = Date.now();
     if (now - lastZap < 800) return;
     lastZap = now;
