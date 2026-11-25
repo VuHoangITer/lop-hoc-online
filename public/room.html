@@ -271,8 +271,8 @@ body.side-open .side{transform:none}
     <div class="row">
       <span>Cỡ chữ</span>
       <select id="edSize" style="width:auto;margin:0">
-        <option value="28">Nhỏ</option><option value="40" selected>Vừa</option>
-        <option value="56">Lớn</option><option value="80">Rất lớn</option>
+        <option value="28">Nhỏ</option><option value="40">Vừa</option>
+        <option value="56">Lớn</option><option value="80" selected>Rất lớn</option>
       </select>
       <span class="grow"></span>
       <button class="btn" id="edCancel">Hủy</button>
@@ -844,14 +844,26 @@ dom.addEventListener('pointerdown', (e) => {
   if (!el) { select(null); return; }
   const it = findItem(el.dataset.id);
   if (!it) return;
+  startDrag(e, it, el, !!e.target.closest('.hdl'));
+});
+function startDrag(e, it, el, resize) {
   select(it.id);
   const r0 = el.getBoundingClientRect();
   const p0 = toV(e);
-  drag = { it, offX: p0.x - it.x, offY: p0.y - it.y, cx: e.clientX, cy: e.clientY, last: 0,
-    resize: !!e.target.closest('.hdl'), d0: Math.hypot(r0.width, r0.height) || 1, left: r0.left, top: r0.top, w0: it.w, h0: it.h, s0: it.size };
+  drag = { it, offX: p0.x - it.x, offY: p0.y - it.y, cx: e.clientX, cy: e.clientY, last: 0, right: e.button === 2,
+    resize, d0: Math.hypot(r0.width, r0.height) || 1, left: r0.left, top: r0.top, w0: it.w, h0: it.h, s0: it.size };
   e.preventDefault();
   e.stopPropagation();
-});
+}
+// chuột phải giữ + kéo: dời chữ/công thức/ảnh ở bất kỳ công cụ nào
+area.addEventListener('pointerdown', (e) => {
+  if (e.button !== 2 || tool === 'select') return;
+  const els = Object.values(domEls).reverse();
+  const el = els.find((d) => { const r = d.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; });
+  const it = el && findItem(el.dataset.id);
+  if (it) startDrag(e, it, el, false);
+}, true);
+area.addEventListener('contextmenu', (e) => e.preventDefault());
 window.addEventListener('pointermove', (e) => {
   if (!drag) return;
   if (touches.size > 1) { drag = null; return; }
@@ -915,6 +927,7 @@ function autoScroll() {
 window.addEventListener('pointerup', () => {
   if (!drag) return;
   if (drag.patch) socket.emit('item:update', { p: cur, id: drag.it.id, patch: drag.patch });
+  if (drag.right && tool !== 'select') select(null);
   drag = null;
 });
 dom.addEventListener('dblclick', (e) => {
@@ -957,7 +970,7 @@ edText.addEventListener('input', updPrev);
 function openEditor(pt, it) {
   edCtx = { pt, it };
   edText.value = it ? it.content : '';
-  $('#edSize').value = it ? String(it.size) : '40';
+  $('#edSize').value = it ? String(it.size) : '80';
   if (it && ![...$('#edSize').options].some((o) => +o.value === it.size)) { const o = document.createElement('option'); o.value = o.textContent = String(it.size); $('#edSize').appendChild(o); $('#edSize').value = String(it.size); }
   $('#editor').hidden = false;
   updPrev(); edText.focus();
