@@ -146,6 +146,7 @@ if (!rooms[ROOM]) {
   save();
 }
 rooms[ROOM].title = TITLE || 'Phụ đạo';
+if (!rooms[ROOM].score) rooms[ROOM].score = { total: 0, log: [], updated: 0 };
 
 const page = path.join(__dirname, 'public', 'room.html');
 app.get('/', (req, res) => res.sendFile(page));
@@ -177,7 +178,7 @@ io.on('connection', (sock) => {
     ack({
       id: sock.id, role, title: r.title,
       state: { pages: r.pages, current: r.current, allowDraw: r.allowDraw },
-      chat: lv.chat, users: usersList(lv), hands: handsList(lv), voice: lv.voice, voiceBy: lv.voiceSock,
+      score: r.score, chat: lv.chat, users: usersList(lv), hands: handsList(lv), voice: lv.voice, voiceBy: lv.voiceSock,
     });
     io.to(r.code).emit('users', usersList(lv));
   });
@@ -315,6 +316,33 @@ io.on('connection', (sock) => {
     io.to(room.code).emit('chat', m);
   });
   /* ⚡ chích điện: phát âm thanh trên máy người kia */
+  /* ⭐ bảng điểm: lưu trong rooms.json cùng bảng */
+  on('score:add', (d) => {
+    if (!room) return;
+    const delta = Math.trunc(Number(d.d));
+    if (!delta || Math.abs(delta) > 100) return;
+    const sc = room.score;
+    sc.total += delta;
+    sc.updated = Date.now();
+    sc.log.unshift({ t: sc.updated, d: delta, by: name, why: String(d.why || '').trim().slice(0, 60) });
+    sc.log = sc.log.slice(0, 200);
+    touch();
+    io.to(room.code).emit('score', { ...sc, last: sc.log[0] });
+  });
+  // server vừa khởi động lại (mất file) thì lấy lại điểm từ bản sao trong trình duyệt
+  on('score:restore', (d) => {
+    if (!room) return;
+    const up = Number(d.updated) || 0;
+    if (up <= room.score.updated || up > Date.now() + 60000) return;
+    const log = (Array.isArray(d.log) ? d.log : []).slice(0, 200).map((e) => ({
+      t: Number(e && e.t) || 0, d: Math.trunc(Number(e && e.d)) || 0,
+      by: String((e && e.by) || '').slice(0, 30), why: String((e && e.why) || '').slice(0, 60),
+    }));
+    room.score = { total: Math.trunc(Number(d.total)) || 0, log, updated: up };
+    touch();
+    io.to(room.code).emit('score', room.score);
+  });
+
   let lastZap = 0;
   on('zap', () => {
     if (!room) return;

@@ -11,6 +11,7 @@ Nhiều trang, lưu cả trang bài tập về máy thành ảnh (💾).
 Chỉ có 1 bảng, lưu mãi. Ai mở link (ví dụ https://ten-mien-cua-ban/) cũng vẽ, xóa, thêm trang được như nhau.
 
 - Lần đầu mở: nhập tên. Lần sau vào thẳng bảng.
+- ⭐: bảng điểm cộng/trừ kèm lý do và lịch sử. Lưu trong data/rooms.json; mỗi trình duyệt giữ 1 bản sao, nếu server mất file (Render khởi động lại) thì máy vào đầu tiên tự gửi lại điểm.
 - 💾: lưu cả trang (mọi nét, chữ, công thức, ảnh) thành 1 ảnh PNG về máy.
 - Đổi tên lớp: biến môi trường `CLASS_TITLE="Toán 9 - Bin"`.
 - Không có mật khẩu: đừng đăng link công khai, ai có link đều sửa được bảng.

@@ -131,6 +131,25 @@ body.shake{animation:shake .6s}
 .zoomInfo{position:absolute;right:36px;bottom:8px;background:#0f172acc;color:#fff;padding:6px 12px;border-radius:99px;font-size:12px;z-index:15;border:0;cursor:pointer}
 .banner{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:6px 14px;border-radius:99px;z-index:20}
 
+/* bảng điểm */
+#scoreBtn{flex:none;border:0;background:#fef3c7;color:#92400e;border-radius:99px;height:30px;padding:0 10px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap}
+#scoreBtn:hover{background:#fde68a}
+.scorePop{flex-direction:column;flex-wrap:nowrap;width:min(300px,94vw)}
+.scBig{font-size:30px;font-weight:800;text-align:center;color:#b45309}
+#scoreWhy{padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;width:100%}
+.scBtns{display:flex;gap:6px}
+.scBtns button{flex:1;height:42px;border-radius:10px;border:0;font-size:17px;font-weight:700;cursor:pointer;background:#dcfce7;color:#166534}
+.scBtns button.m{background:#fee2e2;color:#991b1b}
+.scBtns button:active{transform:scale(.94)}
+.scLog{max-height:210px;overflow:auto;font-size:13px}
+.scLog div{display:flex;gap:6px;align-items:baseline;padding:5px 2px;border-top:1px solid #f1f5f9}
+.scLog b{min-width:34px;color:#16a34a}
+.scLog b.m{color:#dc2626}
+.scLog small{color:#94a3b8;margin-left:auto;white-space:nowrap}
+.scLog .empty{color:#94a3b8;justify-content:center;border:0}
+.scFly{position:fixed;left:50%;top:40%;font-size:72px;font-weight:900;z-index:160;pointer-events:none;animation:scF 1.7s ease-out forwards;text-shadow:0 4px 18px #0004;white-space:nowrap}
+@keyframes scF{0%{opacity:0;transform:translate(-50%,-30%) scale(.4)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}30%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-150%) scale(1)}}
+
 /* hộp thoại */
 .modal{position:fixed;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;z-index:100;padding:12px}
 .modal .card{background:#fff;border-radius:14px;padding:20px;width:min(380px,100%)}
@@ -156,6 +175,7 @@ body.shake{animation:shake .6s}
   <h1 id="title">Phụ đạo</h1>
   <div class="tabs" id="tabs"></div>
   <button id="count" title="Ai đang trong phòng">👥 0</button>
+  <button id="scoreBtn" title="Bảng điểm">⭐ <span id="scoreVal">0</span></button>
   <button class="ib" id="saveBtn" title="Lưu cả trang bài tập về máy (ảnh PNG)">💾</button>
   <button class="ib" id="zapBtn" title="Chích điện người kia ⚡">⚡</button>
   <button class="ib" id="moreBtn" title="Thêm">⋯</button>
@@ -175,6 +195,15 @@ body.shake{animation:shake .6s}
     <option value="dots">Chấm</option>
   </select>
   <button class="btn full" id="linkBtn">🔗 Copy link</button>
+</div>
+<div class="pop scorePop" id="scorePop" hidden>
+  <div class="scBig">⭐ <span id="scoreBig">0</span> điểm</div>
+  <input id="scoreWhy" placeholder="Lý do (không bắt buộc), vd: làm đúng bài 3" maxlength="60">
+  <div class="scBtns">
+    <button class="m" data-d="-5">−5</button><button class="m" data-d="-1">−1</button>
+    <button data-d="1">+1</button><button data-d="5">+5</button><button data-d="10">+10</button>
+  </div>
+  <div class="scLog" id="scoreLog"></div>
 </div>
 <div class="pop" id="usersPop" hidden><div class="ulist" id="ulist"></div></div>
 <div class="pop" id="shapePop" hidden>
@@ -604,7 +633,7 @@ $('#count').onclick = (e) => { e.stopPropagation(); openPop($('#usersPop'), e.cu
 try { localStorage.removeItem('bw_topHidden'); } catch (er) { /* bỏ qua */ }
 $$('.pop').forEach((p) => p.addEventListener('click', (e) => e.stopPropagation()));
 document.addEventListener('click', closePops);
-document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.pop') && !e.target.closest('#shapeBtn,#colorBtn,#moreBtn,#count')) closePops(); });
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.pop') && !e.target.closest('#shapeBtn,#colorBtn,#moreBtn,#count,#scoreBtn')) closePops(); });
 setColor(color);
 
 const toV = (e) => {
@@ -1272,6 +1301,72 @@ async function savePage() {
 }
 $('#saveBtn').onclick = savePage;
 
+/* ---------- ⭐ bảng điểm ----------
+   Điểm lưu trên server (rooms.json) và có bản sao trong trình duyệt mỗi máy.
+   Server trên mạng khởi động lại mà mất file thì máy nào vào trước sẽ gửi lại bản sao mới nhất. */
+let score = { total: 0, log: [], updated: 0 };
+function renderScore() {
+  $('#scoreVal').textContent = score.total;
+  $('#scoreBig').textContent = score.total;
+  const box = $('#scoreLog');
+  box.textContent = '';
+  if (!score.log.length) { const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'Chưa có lần cộng/trừ nào'; box.appendChild(e); return; }
+  const pad = (n) => String(n).padStart(2, '0');
+  score.log.slice(0, 40).forEach((e) => {
+    const row = document.createElement('div');
+    const b = document.createElement('b');
+    b.textContent = (e.d > 0 ? '+' : '') + e.d;
+    if (e.d < 0) b.className = 'm';
+    const w = document.createElement('span');
+    w.textContent = e.why || (e.d > 0 ? 'Làm tốt' : 'Chưa tốt');
+    const t = new Date(e.t), sm = document.createElement('small');
+    sm.textContent = pad(t.getHours()) + ':' + pad(t.getMinutes()) + ' ' + pad(t.getDate()) + '/' + pad(t.getMonth() + 1);
+    sm.title = 'Bởi ' + e.by;
+    row.append(b, w, sm);
+    box.appendChild(row);
+  });
+}
+function setScore(s, fx) {
+  if (!s) return;
+  score = { total: s.total || 0, log: s.log || [], updated: s.updated || 0 };
+  renderScore();
+  try { localStorage.setItem('bw_score', JSON.stringify(score)); } catch (e) { /* bỏ qua */ }
+  if (fx && s.last) scoreFx(s.last);
+}
+function scoreSound(up) {
+  const a = getAC();
+  if (!a) return;
+  const t = a.currentTime;
+  (up ? [660, 880, 1320] : [300, 200]).forEach((f, i) => {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = up ? 'triangle' : 'sawtooth';
+    o.frequency.value = f;
+    const s0 = t + i * (up ? 0.09 : 0.16);
+    g.gain.setValueAtTime(0.0001, s0);
+    g.gain.exponentialRampToValueAtTime(up ? 0.25 : 0.15, s0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, s0 + (up ? 0.35 : 0.3));
+    o.connect(g); g.connect(a.destination); o.start(s0); o.stop(s0 + 0.4);
+  });
+}
+function scoreFx(e) {
+  const up = e.d > 0;
+  const f = document.createElement('div');
+  f.className = 'scFly';
+  f.style.color = up ? '#16a34a' : '#dc2626';
+  f.textContent = (up ? '+' : '') + e.d + (up ? ' ⭐' : ' 😢');
+  document.body.appendChild(f);
+  setTimeout(() => f.remove(), 1800);
+  scoreSound(up);
+  toast((e.by === myName ? 'Bạn' : e.by) + (up ? ' cộng ' : ' trừ ') + Math.abs(e.d) + ' điểm' + (e.why ? ': ' + e.why : '') + ' · Tổng ' + score.total);
+}
+$$('#scorePop .scBtns button').forEach((b) => (b.onclick = () => {
+  if (!socket) return;
+  socket.emit('score:add', { d: +b.dataset.d, why: $('#scoreWhy').value });
+  $('#scoreWhy').value = '';
+}));
+$('#scoreBtn').onclick = (e) => { e.stopPropagation(); openPop($('#scorePop'), e.currentTarget); };
+renderScore();
+
 /* ---------- socket ---------- */
 function init(res) {
   me = { id: res.id, role: res.role };
@@ -1289,6 +1384,10 @@ function init(res) {
   $('#allowChk').checked = allowDraw;
   if (!isT() && !allowDraw) setTool('laser'); else if (!isT() && tool !== 'pen' && tool !== 'text') setTool('pen');
   users = res.users; hands = res.hands;
+  let loc = null;
+  try { loc = JSON.parse(localStorage.getItem('bw_score') || 'null'); } catch (e) { loc = null; }
+  const srv = res.score || { total: 0, log: [], updated: 0 };
+  if (loc && loc.updated > (srv.updated || 0)) { setScore(loc); socket.emit('score:restore', loc); } else setScore(srv);
   select(null); myStack = [];
   renderTabs(); applyBg(); renderUsers(); fit(); renderDom();
   $('#banner').hidden = true;
@@ -1370,6 +1469,7 @@ function connect() {
   socket.on('users', (u) => { users = u; renderUsers(); });
   socket.on('hands', (h) => { hands = h; renderUsers(); });
   socket.on('view', takeView);
+  socket.on('score', (s) => setScore(s, true));
   socket.on('zap', ({ name }) => { zapEffect(); toast('⚡ ' + name + ' chích điện bạn! Làm lại đi 😆'); });
 }
 
