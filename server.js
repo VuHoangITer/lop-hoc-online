@@ -84,6 +84,7 @@ function sanitizeItem(it, author) {
       return { ...base, t: it.t, c: col(it.c), w: num(it.w, 1, 120, 4), pts };
     }
     case 'line':
+    case 'dash':
     case 'arrow':
     case 'rect':
     case 'ellipse':

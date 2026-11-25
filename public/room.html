@@ -192,6 +192,7 @@ body.side-open .side{transform:none}
 <div class="pop" id="usersPop" hidden><div class="ulist" id="ulist"></div></div>
 <div class="pop" id="shapePop" hidden>
   <button class="tb" data-tool="line" title="Đường thẳng">╱</button>
+  <button class="tb" data-tool="dash" title="Đường thẳng nét đứt">┄</button>
   <button class="tb" data-tool="arrow" title="Mũi tên">➜</button>
   <button class="tb" data-tool="rect" title="Hình chữ nhật">▭</button>
   <button class="tb" data-tool="ellipse" title="Hình tròn / elip">◯</button>
@@ -210,7 +211,7 @@ body.side-open .side{transform:none}
   <div class="tools" id="tools">
     <button class="tb on" data-tool="pen" title="Bút">✏️</button>
     <button class="tb" data-tool="eraser" title="Tẩy">🧽</button>
-    <button class="tb" id="shapeBtn" title="Hình: thẳng, mũi tên, chữ nhật, tròn">◯</button>
+    <button class="tb" id="shapeBtn" title="Hình: thẳng, nét đứt, mũi tên, chữ nhật, tròn">◯</button>
     <button class="tb" data-tool="text" title="Chữ / công thức">T</button>
     <button class="tb" id="imgBtn" title="Chèn ảnh đề bài (cũng có thể Ctrl+V)">🖼</button>
     <button class="tb" data-tool="select" title="Chọn / di chuyển / xóa">🖐</button>
@@ -476,7 +477,8 @@ function drawItem(it, from) {
       ctx.moveTo(p[s], p[s + 1]);
       for (let i = s + 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
     }
-  } else if (it.t === 'line' || it.t === 'arrow') {
+  } else if (it.t === 'line' || it.t === 'arrow' || it.t === 'dash') {
+    if (it.t === 'dash') ctx.setLineDash([it.w * 3 + 6, it.w * 2 + 6]);
     ctx.moveTo(it.x1, it.y1); ctx.lineTo(it.x2, it.y2);
     if (it.t === 'arrow') {
       const a = Math.atan2(it.y2 - it.y1, it.x2 - it.x1), hl = 14 + it.w * 2;
@@ -576,7 +578,7 @@ function setTool(t) {
   stage.classList.toggle('sel', t === 'select');
   cv.style.cursor = !canDrawNow() || t === 'select' ? 'default' : t === 'text' ? 'text' : 'crosshair';
   if (t !== 'select') select(null);
-  const shp = { line: '╱', arrow: '➜', rect: '▭', ellipse: '◯' }[t];
+  const shp = { line: '╱', dash: '┄', arrow: '➜', rect: '▭', ellipse: '◯' }[t];
   if (shp) $('#shapeBtn').textContent = shp;
   $('#shapeBtn').classList.toggle('on', !!shp);
   closePops();
