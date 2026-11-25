@@ -341,7 +341,7 @@ function applyView() {
   }
   updRail();
   dom.style.setProperty('--inv', 1 / scale);
-  placeSelBar();
+  if (drag && !drag.resize) dragTo(); else placeSelBar();
   sendView();
 }
 /* ---- màn hình người kia cuộn theo mình ---- */
@@ -802,7 +802,8 @@ dom.addEventListener('pointerdown', (e) => {
   if (!it) return;
   select(it.id);
   const r0 = el.getBoundingClientRect();
-  drag = { it, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, last: 0,
+  const p0 = toV(e);
+  drag = { it, offX: p0.x - it.x, offY: p0.y - it.y, cx: e.clientX, cy: e.clientY, last: 0,
     resize: !!e.target.closest('.hdl'), d0: Math.hypot(r0.width, r0.height) || 1, left: r0.left, top: r0.top, w0: it.w, h0: it.h, s0: it.size };
   e.preventDefault();
   e.stopPropagation();
@@ -821,36 +822,57 @@ window.addEventListener('pointermove', (e) => {
     }
     else { it.size = Math.round(Math.min(400, Math.max(8, drag.s0 * f))); patch = { size: it.size }; if (el) el.style.fontSize = it.size + 'px'; }
   } else {
-    it.x = Math.round(drag.ox + (e.clientX - drag.sx) / scale);
-    it.y = Math.round(drag.oy + (e.clientY - drag.sy) / scale);
-    patch = { x: it.x, y: it.y };
-    if (el) posEl(el, it);
+    drag.cx = e.clientX; drag.cy = e.clientY;
+    dragTo();
+    autoScroll();
+    return;
   }
   drag.patch = patch;
   placeSelBar();
+  sendDrag();
+});
+function sendDrag() {
   const now = performance.now();
   if (now - drag.last > 50) {
     drag.last = now;
-    socket.emit('item:update', { p: cur, id: it.id, patch });
+    socket.emit('item:update', { p: cur, id: drag.it.id, patch: drag.patch });
   }
-});
+}
+// đặt ảnh/chữ đang kéo đúng dưới con trỏ, kể cả khi bảng vừa cuộn
+function dragTo() {
+  if (!drag || drag.resize) return;
+  const it = drag.it, el = domEls[it.id];
+  const p = toV({ clientX: drag.cx, clientY: drag.cy });
+  it.x = Math.round(p.x - drag.offX);
+  it.y = Math.round(p.y - drag.offY);
+  if (el) posEl(el, it);
+  drag.patch = { x: it.x, y: it.y };
+  placeSelBar();
+  sendDrag();
+}
+// kéo ảnh sát mép trên/dưới thì bảng tự cuộn
+let autoT = null;
+function autoScroll() {
+  if (autoT) return;
+  const step = () => {
+    autoT = null;
+    if (!drag || drag.resize) return;
+    const r = stage.getBoundingClientRect(), edge = 40;
+    let d = 0;
+    if (drag.cy > r.bottom - edge) d = (drag.cy - (r.bottom - edge)) / edge;
+    else if (drag.cy < r.top + edge) d = -((r.top + edge) - drag.cy) / edge;
+    if (!d) return;
+    vy += Math.max(-1.5, Math.min(1.5, d)) * 12 / scale;
+    applyView();
+    autoT = requestAnimationFrame(step);
+  };
+  autoT = requestAnimationFrame(step);
+}
 window.addEventListener('pointerup', () => {
   if (!drag) return;
   if (drag.patch) socket.emit('item:update', { p: cur, id: drag.it.id, patch: drag.patch });
   drag = null;
 });
-dom.addEventListener('wheel', (e) => {
-  if (tool !== 'select' || !isT()) return;
-  const el = e.target.closest('.im');
-  if (!el) return;
-  const it = findItem(el.dataset.id);
-  if (!it) return;
-  e.preventDefault();
-  const f = e.deltaY < 0 ? 1.06 : 1 / 1.06;
-  it.w = Math.round(it.w * f); it.h = Math.round(it.h * f);
-  posEl(el, it);
-  socket.emit('item:update', { p: cur, id: it.id, patch: { w: it.w, h: it.h } });
-}, { passive: false });
 dom.addEventListener('dblclick', (e) => {
   if (tool !== 'select' || !isT()) return;
   const el = e.target.closest('.ti');
