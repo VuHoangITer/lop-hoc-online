@@ -122,6 +122,8 @@ input[type=color]{width:34px;height:30px;padding:0;border:1px solid #cbd5e1;bord
 body.shake{animation:shake .6s}
 @keyframes shake{0%,100%{transform:none}10%{transform:translate(-6px,3px)}20%{transform:translate(5px,-4px)}30%{transform:translate(-4px,-2px)}40%{transform:translate(6px,4px)}50%{transform:translate(-5px,2px)}60%{transform:translate(4px,-3px)}70%{transform:translate(-3px,3px)}80%{transform:translate(2px,-2px)}}
 #zapBtn{font-size:19px}
+.peerFrame{position:absolute;z-index:6;border:2px dashed #f59e0b;border-radius:6px;pointer-events:none;box-shadow:0 0 0 200vmax #0f172a12}
+.peerFrame span{position:absolute;left:4px;top:-1px;transform:translateY(-100%);background:#f59e0b;color:#fff;font-size:11px;padding:1px 7px;border-radius:6px 6px 0 0;white-space:nowrap}
 .rail{position:absolute;top:0;right:0;bottom:0;width:30px;z-index:14;touch-action:none;background:linear-gradient(90deg,transparent,#0f172a0d);cursor:pointer}
 .rail .thumb{position:absolute;right:4px;width:20px;min-height:48px;border-radius:10px;background:#475569b3;box-shadow:0 1px 4px #0003;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;line-height:1}
 .rail.drag .thumb{background:#2563ebd9}
@@ -224,6 +226,7 @@ body.side-open .side{transform:none}
       <canvas id="cv"></canvas>
       <div id="dom"></div>
       <div class="laser" id="laser"></div>
+      <div class="peerFrame" id="peerFrame" hidden><span id="peerName"></span></div>
     </div>
     <div class="selBar" id="selBar" hidden>
       <button id="sbSmall" title="Nhỏ lại">➖</button><button id="sbBig" title="To lên">➕</button>
@@ -320,10 +323,11 @@ function toast(msg) {
    2 ngón tay để kéo lên/xuống và phóng to. */
 function clampView() {
   const r = stage.getBoundingClientRect();
-  zoomRel = Math.min(5, Math.max(1, zoomRel));
+  zoomRel = Math.min(5, Math.max(zMin, zoomRel));
   scale = fitS * zoomRel;
   const vw = r.width / scale, vh = r.height / scale;
-  vx = Math.min(Math.max(0, vx), Math.max(0, W - vw));
+  if (vw >= W) vx = (W - vw) / 2; // bảng hẹp hơn màn hình: để giữa
+  else vx = Math.min(Math.max(0, vx), W - vw);
   vy = Math.min(Math.max(0, vy), MAXY - vh);
 }
 function applyView() {
@@ -340,28 +344,60 @@ function applyView() {
     zi.textContent = (zoomRel >= 1.05 ? Math.round(zoomRel * 100) + '% · ' : '') + 'Dòng ' + Math.round(vy / 40 + 1) + '  ⤒';
   }
   updRail();
+  placePeer();
   dom.style.setProperty('--inv', 1 / scale);
   if (drag && !drag.resize) dragTo(); else placeSelBar();
   sendView();
 }
 /* ---- màn hình người kia cuộn theo mình ---- */
-let remoteView = false, lastView = '', viewT = null, pendView = null;
+/* Mỗi người gửi đúng vùng bảng mình đang thấy. Máy kia thu phóng để thấy trọn vùng đó
+   (màn hình khác cỡ vẫn thấy giống nhau) và vẽ khung cam đánh dấu. */
+let remoteView = false, lastView = '', viewT = null, pendView = null, peer = null, zMin = 1;
+function myRect() {
+  const vw = stage.clientWidth / scale, vh = stage.clientHeight / scale;
+  const x = Math.max(0, vx), y = Math.max(0, vy);
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(Math.min(W, vx + vw) - x), h: Math.round(vh) };
+}
 function sendView() {
   if (remoteView || !socket || !cur) return;
-  const key = cur + ':' + Math.round(vx) + ':' + Math.round(vy);
+  const m = myRect();
+  const key = cur + ':' + m.x + ':' + m.y + ':' + m.w + ':' + m.h;
   if (key === lastView) return;
   lastView = key;
+  if (peer) { peer = null; placePeer(); } // mình tự cuộn: thôi theo người kia
   if (viewT) return;
-  viewT = setTimeout(() => { viewT = null; socket.emit('view', { p: cur, x: Math.round(vx), y: Math.round(vy) }); }, 60);
+  viewT = setTimeout(() => { viewT = null; socket.emit('view', { p: cur, ...myRect() }); }, 60);
+}
+function placePeer() {
+  const f = $('#peerFrame');
+  if (!f) return;
+  if (!peer || peer.p !== cur) { f.hidden = true; return; }
+  const vw = stage.clientWidth / scale, vh = stage.clientHeight / scale, t = 6 / scale;
+  // vùng người kia gần trùng màn hình mình thì khỏi vẽ khung
+  if (peer.x <= Math.max(0, vx) + t && peer.y <= vy + t && peer.x + peer.w >= Math.min(W, vx + vw) - t && peer.y + peer.h >= vy + vh - t) { f.hidden = true; return; }
+  f.hidden = false;
+  f.style.left = (peer.x - vx) * scale + 'px'; f.style.top = (peer.y - vy) * scale + 'px';
+  f.style.width = peer.w * scale + 'px'; f.style.height = peer.h * scale + 'px';
+  $('#peerName').textContent = 'Màn hình của ' + (peer.name || 'bên kia');
 }
 function busy() { return drawing || drag || touches.size > 0 || $('#rail').classList.contains('drag'); }
 function takeView(v) {
   if (v.p !== cur) return;
   if (busy()) { pendView = v; return; }
   pendView = null;
-  vx = v.x; vy = v.y;
+  peer = v;
+  // thu phóng sao cho thấy trọn vùng người kia, đặt vào giữa
+  const aw = stage.clientWidth, ah = stage.clientHeight;
+  const s = Math.min(aw / v.w, ah / v.h);
+  zoomRel = s / fitS;
+  zMin = Math.min(1, zoomRel);
+  scale = fitS * zoomRel;
+  vx = v.x + v.w / 2 - aw / scale / 2;
+  vy = Math.max(0, v.y + v.h / 2 - ah / scale / 2);
+  if (vy > v.y) vy = v.y;
   remoteView = true; applyView(); remoteView = false;
-  lastView = cur + ':' + Math.round(vx) + ':' + Math.round(vy);
+  const m = myRect();
+  lastView = cur + ':' + m.x + ':' + m.y + ':' + m.w + ':' + m.h;
 }
 window.addEventListener('pointerup', () => setTimeout(() => { if (pendView && !busy()) takeView(pendView); }, 80));
 /* thanh cuộn bên phải: chiều dài theo phần đã viết + thêm 1 màn hình trống bên dưới */
@@ -416,9 +452,9 @@ function fit() {
   const dpr = window.devicePixelRatio || 1;
   cv.width = Math.round(r.width * dpr);
   cv.height = Math.round(r.height * dpr);
-  applyView();
+  remoteView = true; applyView(); remoteView = false;
 }
-function resetView() { vx = 0; vy = 0; zoomRel = 1; applyView(); }
+function resetView() { vx = 0; vy = 0; zoomRel = 1; zMin = 1; applyView(); }
 $('#zoomInfo').onclick = resetView;
 $('#zoomInfo').addEventListener('pointerdown', (e) => e.stopPropagation());
 new ResizeObserver(() => fit()).observe(area);
@@ -459,6 +495,11 @@ function redraw() {
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.setTransform(k, 0, 0, k, -vx * k, -vy * k);
   (items[cur] || []).forEach((it) => drawItem(it, 0));
+  if (vx < 0) {
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(vx - 5, vy - 5, -vx + 5, MAXY);
+    ctx.fillRect(W, vy - 5, -vx + 5, MAXY);
+  }
 }
 
 /* ---------- chữ / công thức / ảnh (lớp DOM) ---------- */
@@ -628,7 +669,7 @@ area.addEventListener('pointermove', (e) => {
   const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
   const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
   if (!pinch.zooming && Math.abs(dist / pinch.d - 1) > 0.15) { pinch.zooming = true; pinch.d = dist; pinch.z = zoomRel; }
-  if (pinch.zooming) zoomRel = Math.min(5, Math.max(1, pinch.z * dist / pinch.d));
+  if (pinch.zooming) zoomRel = Math.min(5, Math.max(zMin, pinch.z * dist / pinch.d));
   scale = fitS * zoomRel;
   vx = pinch.bx - mx / scale; vy = pinch.by - my / scale;
   applyView();
@@ -649,7 +690,7 @@ area.addEventListener('wheel', (e) => {
     const mx = e.clientX - r.left, my = e.clientY - r.top;
     const bx = mx / scale + vx, by = my / scale + vy;
     zoomRel *= Math.exp(-e.deltaY * 0.01);
-    zoomRel = Math.min(5, Math.max(1, zoomRel));
+    zoomRel = Math.min(5, Math.max(zMin, zoomRel));
     scale = fitS * zoomRel;
     vx = bx - mx / scale; vy = by - my / scale;
   } else {

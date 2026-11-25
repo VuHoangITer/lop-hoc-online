@@ -240,7 +240,7 @@ io.on('connection', (sock) => {
   /* màn hình người kia cuộn theo */
   on('view', (d) => {
     if (!room || !d) return;
-    sock.volatile.to(room.code).emit('view', { p: String(d.p || ''), x: num(d.x, 0, 21000), y: num(d.y, 0, 21000) });
+    sock.volatile.to(room.code).emit('view', { p: String(d.p || ''), x: num(d.x, 0, 21000), y: num(d.y, 0, 21000), w: num(d.w, 50, 21000, 1600), h: num(d.h, 50, 21000, 900), name });
   });
 
   /* --- trang --- */
