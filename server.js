@@ -35,8 +35,13 @@ function save() {
 function flushSync() {
   try { fs.writeFileSync(DATA_FILE, JSON.stringify(rooms)); } catch (e) { /* ignore */ }
 }
-process.on('SIGINT', () => { flushSync(); process.exit(0); });
-process.on('SIGTERM', () => { flushSync(); process.exit(0); });
+async function shutdown() {
+  flushSync();
+  await flushGist(); // Render tắt server: kịp ghi điểm lên gist trước khi thoát
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 /* dữ liệu chỉ tồn tại khi đang chạy: chat, giơ tay, người online, mic */
 const live = {};
@@ -151,6 +156,75 @@ rooms[ROOM].title = TITLE || 'Phụ đạo';
 if (!rooms[ROOM].score) rooms[ROOM].score = { total: 0, log: [], updated: 0 };
 // đã có người chấm điểm từ lúc server chạy thì không nhận bản sao từ trình duyệt nữa
 let scoreLive = false;
+
+/* ---------------- ⭐ sao lưu điểm lên GitHub Gist (miễn phí) ----------------
+   Render gói Free xóa file mỗi lần khởi động lại, nên điểm được ghi thêm vào 1 gist bí mật
+   trên tài khoản GitHub của bạn. Chỉ cần biến môi trường GIST_TOKEN (token có quyền "gist").
+   Gist tự được tạo ở lần chạy đầu, tìm lại theo tên file. */
+const GIST_TOKEN = String(process.env.GIST_TOKEN || '').trim();
+const GH_API = process.env.GIST_API || 'https://api.github.com';
+const GIST_FILE = 'lop-hoc-online-score.json';
+let gistId = null, gistTimer = null, gistDirty = false;
+async function gh(pathname, opts = {}) {
+  const r = await fetch(GH_API + pathname, {
+    ...opts,
+    headers: { Authorization: 'Bearer ' + GIST_TOKEN, Accept: 'application/vnd.github+json', 'User-Agent': 'lop-hoc-online', 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!r.ok) throw new Error('GitHub ' + r.status + ' ' + pathname);
+  return r.json();
+}
+function cleanScore(s) {
+  return {
+    total: Math.trunc(Number(s && s.total)) || 0,
+    log: (Array.isArray(s && s.log) ? s.log : []).slice(0, 200).map((e) => ({
+      t: Number(e && e.t) || 0, d: Math.trunc(Number(e && e.d)) || 0,
+      by: String((e && e.by) || '').slice(0, 30), why: String((e && e.why) || '').slice(0, 60),
+    })),
+    updated: Number(s && s.updated) || 0,
+  };
+}
+async function loadScoreFromGist() {
+  if (!GIST_TOKEN) return;
+  try {
+    const list = await gh('/gists?per_page=100');
+    const found = list.find((g) => g.files && g.files[GIST_FILE]);
+    if (!found) {
+      const c = await gh('/gists', { method: 'POST', body: JSON.stringify({
+        description: 'Bảng điểm lớp Phụ đạo (tự tạo bởi lop-hoc-online, đừng xóa)', public: false,
+        files: { [GIST_FILE]: { content: JSON.stringify(rooms[ROOM].score, null, 1) } },
+      }) });
+      gistId = c.id;
+      console.log('[gist] đã tạo gist lưu điểm:', gistId);
+      return;
+    }
+    gistId = found.id;
+    const full = await gh('/gists/' + gistId);
+    const s = cleanScore(JSON.parse(full.files[GIST_FILE].content || '{}'));
+    if (s.updated > (rooms[ROOM].score.updated || 0)) { rooms[ROOM].score = s; save(); }
+    console.log('[gist] đã đọc điểm:', rooms[ROOM].score.total);
+  } catch (e) {
+    console.error('[gist] không đọc được điểm:', e.message);
+  }
+}
+async function writeGist() {
+  if (!GIST_TOKEN || !gistId || !gistDirty) return;
+  gistDirty = false;
+  try {
+    await gh('/gists/' + gistId, { method: 'PATCH', body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(rooms[ROOM].score, null, 1) } } }) });
+  } catch (e) {
+    gistDirty = true;
+    console.error('[gist] không lưu được điểm:', e.message);
+    clearTimeout(gistTimer); gistTimer = setTimeout(writeGist, 30000); // thử lại sau
+  }
+}
+function saveScoreToGist() {
+  if (!GIST_TOKEN) return;
+  gistDirty = true;
+  clearTimeout(gistTimer);
+  gistTimer = setTimeout(writeGist, 2000);
+}
+async function flushGist() { clearTimeout(gistTimer); await writeGist(); }
 
 const page = path.join(__dirname, 'public', 'room.html');
 app.get('/', (req, res) => res.sendFile(page));
@@ -334,6 +408,7 @@ io.on('connection', (sock) => {
     sc.log.unshift({ t: sc.updated, d: delta, by: name, why: String(d.why || '').trim().slice(0, 60) });
     sc.log = sc.log.slice(0, 200);
     touch();
+    saveScoreToGist();
     io.to(room.code).emit('score', { ...sc, last: sc.log[0] });
     ack({ ok: true });
   });
@@ -348,6 +423,7 @@ io.on('connection', (sock) => {
     }));
     room.score = { total: Math.trunc(Number(d.total)) || 0, log, updated: up };
     touch();
+    saveScoreToGist();
     io.to(room.code).emit('score', room.score);
   });
 
@@ -409,6 +485,6 @@ io.on('connection', (sock) => {
 });
 
 
-server.listen(PORT, () => {
+loadScoreFromGist().finally(() => server.listen(PORT, () => {
   console.log('Lớp học online chạy tại http://localhost:' + PORT);
-});
+}));

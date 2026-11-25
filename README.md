@@ -13,6 +13,7 @@ Chỉ có 1 bảng, lưu mãi. Ai mở link (ví dụ https://ten-mien-cua-ban/)
 - Lần đầu mở: nhập tên. Lần sau vào thẳng bảng.
 - ⭐: bảng điểm cộng/trừ kèm lý do và lịch sử. Lưu trong data/rooms.json; mỗi trình duyệt giữ 1 bản sao, nếu server mất file (Render khởi động lại) thì máy vào đầu tiên tự gửi lại điểm.
 - Chỉ máy nhập đúng mã PIN (biến môi trường `SCORE_PIN`, mặc định `1234`) mới cộng/trừ điểm và chích điện ⚡ được; máy khác chỉ xem.
+- Sao lưu điểm lên GitHub Gist (miễn phí, không mất khi Render khởi động lại): tạo token GitHub (classic) chỉ tick quyền `gist`, đặt vào biến môi trường `GIST_TOKEN` trên Render. Gist bí mật `lop-hoc-online-score.json` tự được tạo ở lần chạy đầu.
 - 💾: lưu cả trang (mọi nét, chữ, công thức, ảnh) thành 1 ảnh PNG về máy.
 - Đổi tên lớp: biến môi trường `CLASS_TITLE="Toán 9 - Bin"`.
 - Không có mật khẩu: đừng đăng link công khai, ai có link đều sửa được bảng.
